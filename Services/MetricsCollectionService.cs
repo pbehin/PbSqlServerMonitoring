@@ -16,6 +16,7 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
 {
     #region Fields
     
+    private readonly MultiConnectionService _multiConnectionService;
     private readonly ConnectionService _connectionService;
     private readonly ServerHealthService _healthService;
     private readonly BlockingService _blockingService;
@@ -37,6 +38,7 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
     #region Constructor
     
     public MetricsCollectionService(
+        MultiConnectionService multiConnectionService,
         ConnectionService connectionService,
         ServerHealthService healthService,
         BlockingService blockingService,
@@ -46,6 +48,7 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
         IBackgroundTaskQueue backgroundTaskQueue,
         ILogger<MetricsCollectionService> logger)
     {
+        _multiConnectionService = multiConnectionService ?? throw new ArgumentNullException(nameof(multiConnectionService));
         _connectionService = connectionService ?? throw new ArgumentNullException(nameof(connectionService));
         _healthService = healthService ?? throw new ArgumentNullException(nameof(healthService));
         _blockingService = blockingService ?? throw new ArgumentNullException(nameof(blockingService));
@@ -120,7 +123,6 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
 
         if (_bufferService.ShouldThrottleCollection)
         {
-            // Apply simple backpressure: skip this tick and log occasionally
             if ((DateTime.UtcNow - _lastThrottleLogUtc).TotalSeconds > 30)
             {
                 _lastThrottleLogUtc = DateTime.UtcNow;
@@ -137,39 +139,73 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
 
         try
         {
-            var info = _connectionService.GetConnectionInfo();
-            var health = await _healthService.GetServerHealthAsync();
+            var enabledConnections = _multiConnectionService.GetEnabledConnections();
+            var collectionTasks = new List<Task>();
             
-            if (health.IsConnected)
+            foreach (var conn in enabledConnections)
             {
-                var blockingTask = _blockingService.GetBlockingSessionsAsync();
-                var topQueriesTask = _queryService.GetTopCpuQueriesAsync(MetricsConstants.DefaultTopN);
-
-                await Task.WhenAll(blockingTask, topQueriesTask);
+                // Capture loop variable (although C# 5+ handles this, it's safer for clarity)
+                var connection = conn;
                 
-                var blockingSessions = await blockingTask;
-                var topQueries = await topQueriesTask;
-                
-                var dataPoint = CreateDataPoint(info, health, topQueries, blockingSessions);
-                
-                _bufferService.Enqueue(dataPoint);
-                _bufferService.Cleanup();
-                
-                if (_ticksSinceSave++ >= MetricsConstants.TicksBetweenSaves)
+                collectionTasks.Add(Task.Run(async () => 
                 {
-                    _ticksSinceSave = 0;
+                    if (cancellationToken.IsCancellationRequested) return;
                     
-                    // Use background task queue instead of fire-and-forget
-                    _backgroundTaskQueue.QueueBackgroundWorkItem(async ct =>
+                    try 
                     {
-                        await SavePendingMetricsAsync();
-                    });
-                }
+                        var connectionString = _multiConnectionService.GetConnectionString(connection.Id);
+                        if (string.IsNullOrEmpty(connectionString)) return;
+
+                        // Pass context to services
+                        var health = await _healthService.GetServerHealthAsync(connectionString);
+                        
+                        if (health.IsConnected)
+                        {
+                            var blockingTask = _blockingService.GetBlockingSessionsAsync(connectionString);
+                            var topQueriesTask = _queryService.GetTopCpuQueriesAsync(MetricsConstants.DefaultTopN, connectionString, includeExecutionPlan: true);
+
+                            await Task.WhenAll(blockingTask, topQueriesTask);
+                            
+                            var blockingSessions = await blockingTask;
+                            var topQueries = await topQueriesTask;
+                            
+                            var dataPoint = CreateDataPoint(connection, health, topQueries, blockingSessions);
+                            
+                            _bufferService.Enqueue(dataPoint);
+                        }
+                    }
+                    catch (Exception innerEx)
+                    {
+                        _logger.LogWarning(innerEx, "Failed to collect metrics for connection {ConnectionName} ({Server})", 
+                            connection.Name, connection.Server);
+                    }
+                }, cancellationToken));
+            }
+            
+            if (collectionTasks.Any())
+            {
+                await Task.WhenAll(collectionTasks);
+                // Record success if we got here without crashing
+                _bufferService.RecordCollectionResult(true);
+            }
+            
+            _bufferService.Cleanup();
+            
+            if (_ticksSinceSave++ >= MetricsConstants.TicksBetweenSaves)
+            {
+                _ticksSinceSave = 0;
+                
+                // Use background task queue instead of fire-and-forget
+                _backgroundTaskQueue.QueueBackgroundWorkItem(async ct =>
+                {
+                    await SavePendingMetricsAsync();
+                });
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to collect metrics");
+            _bufferService.RecordCollectionResult(false, ex.Message);
         }
         finally
         {
@@ -178,7 +214,7 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
     }
     
     private static MetricDataPoint CreateDataPoint(
-        ConnectionInfo info,
+        ServerConnection connection,
         ServerHealth health,
         List<QueryPerformance> topQueries,
         List<BlockingSession> blockingSessions)
@@ -186,8 +222,9 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
         return new MetricDataPoint
         {
             Timestamp = DateTime.UtcNow,
-            ServerName = info.Server ?? "Unknown",
-            DatabaseName = info.Database ?? "Unknown",
+            ConnectionId = connection.Id,
+            ServerName = connection.Server,
+            DatabaseName = connection.Database,
             CpuPercent = health.CpuUsagePercent,
             MemoryMb = health.MemoryUsedMb,
             ActiveConnections = health.ActiveConnections,
@@ -196,6 +233,7 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
             TopQueries = topQueries.Select(q => new QuerySnapshot 
             {
                 QueryHash = q.QueryHash,
+                QueryText = q.QueryText,
                 QueryTextPreview = q.QueryText.Length > MetricsConstants.MaxQueryTextPreviewLength 
                     ? q.QueryText[..(MetricsConstants.MaxQueryTextPreviewLength - 3)] + "..." 
                     : q.QueryText,
@@ -205,20 +243,32 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
                 AvgLogicalWrites = q.AvgLogicalWrites,
                 AvgElapsedTimeMs = q.AvgElapsedTimeMs,
                 DatabaseName = q.DatabaseName,
-                LastExecutionTime = q.LastExecutionTime
+                LastExecutionTime = q.LastExecutionTime,
+                ExecutionPlan = TruncateExecutionPlan(q.ExecutionPlan)
             }).ToList(),
             BlockedQueries = blockingSessions.Select(b => new BlockingSnapshot
             {
                 SessionId = b.SessionId,
                 BlockingSessionId = b.BlockingSessionId,
+                QueryText = b.QueryText,
                 QueryTextPreview = b.QueryText.Length > MetricsConstants.MaxQueryTextPreviewLength 
                     ? b.QueryText[..(MetricsConstants.MaxQueryTextPreviewLength - 3)] + "..." 
                     : b.QueryText,
                 WaitTimeMs = b.WaitTimeMs,
                 WaitType = b.WaitType,
-                IsLeadBlocker = b.IsLeadBlocker
+                IsLeadBlocker = b.IsLeadBlocker,
+                ExecutionPlan = TruncateExecutionPlan(b.ExecutionPlan)
             }).ToList()
         };
+    }
+    
+    /// <summary>Truncate execution plan to limit database storage size</summary>
+    private static string? TruncateExecutionPlan(string? plan)
+    {
+        if (string.IsNullOrEmpty(plan)) return null;
+        return plan.Length <= MetricsConstants.MaxExecutionPlanLength 
+            ? plan 
+            : plan[..MetricsConstants.MaxExecutionPlanLength];
     }
     
     #endregion
@@ -243,10 +293,10 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
             {
                 try
                 {
-                    var groups = pointsToSave.GroupBy(p => new { p.ServerName, p.DatabaseName });
+                    var groups = pointsToSave.GroupBy(p => p.ConnectionId);
                     foreach (var g in groups)
                     {
-                        await _persistenceService.SaveMetricsAsync(g, g.Key.ServerName, g.Key.DatabaseName);
+                        await _persistenceService.SaveMetricsAsync(g, g.Key);
                     }
                     
                     _logger.LogDebug("Saved {Count} metrics to SQL", pointsToSave.Count);
@@ -268,9 +318,19 @@ public sealed class MetricsCollectionService : IHostedService, IDisposable
 
     #region IDisposable
     
+    private bool _disposed;
+
     public void Dispose()
     {
-        _cts.Cancel();
+        if (_disposed) return;
+        _disposed = true;
+        
+        try 
+        {
+            _cts.Cancel();
+        } 
+        catch (ObjectDisposedException) { } // Ignore if already disposed
+        
         _cts.Dispose();
         _collectLock.Dispose();
         _saveLock.Dispose();

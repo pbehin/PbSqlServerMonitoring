@@ -66,13 +66,15 @@ public sealed class ServerHealthService : BaseMonitoringService
     /// <summary>
     /// Gets comprehensive server health status.
     /// </summary>
-    public async Task<ServerHealth> GetServerHealthAsync()
+    public async Task<ServerHealth> GetServerHealthAsync(string? connectionString = null)
     {
         var health = new ServerHealth();
-        var connectionString = ConnectionService.GetConnectionString();
+        var connStr = !string.IsNullOrEmpty(connectionString) 
+            ? connectionString
+            : ConnectionService.GetConnectionString();
 
         // Check if connection is configured
-        if (string.IsNullOrEmpty(connectionString))
+        if (string.IsNullOrEmpty(connStr))
         {
             health.IsConnected = false;
             health.ErrorMessage = "No connection configured. Please configure connection settings.";
@@ -81,7 +83,7 @@ public sealed class ServerHealthService : BaseMonitoringService
 
         try
         {
-            await using var connection = new SqlConnection(connectionString);
+            await using var connection = new SqlConnection(connStr);
             await connection.OpenAsync();
             
             health.IsConnected = true;

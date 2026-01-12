@@ -13,6 +13,10 @@ public class MetricSnapshotEntity
     public DateTime Timestamp { get; set; }
     
     [Required]
+    [MaxLength(64)]
+    public string ConnectionId { get; set; } = "";
+
+    [Required]
     [MaxLength(128)]
     public string ServerName { get; set; } = "";
     
@@ -43,7 +47,7 @@ public class QueryHistoryEntity
     [MaxLength(64)]
     public string? QueryHash { get; set; }
     
-    [MaxLength(500)]
+    /// <summary>Full query text (no size limit)</summary>
     public string? QueryText { get; set; }
     
     [MaxLength(128)]
@@ -57,6 +61,9 @@ public class QueryHistoryEntity
     public long AvgLogicalReads { get; set; }
     public long AvgLogicalWrites { get; set; }
     public double AvgElapsedTimeMs { get; set; }
+    
+    /// <summary>XML execution plan for this query</summary>
+    public string? ExecutionPlan { get; set; }
 }
 
 [Table("BlockingHistory")]
@@ -72,7 +79,7 @@ public class BlockingHistoryEntity
     public int SessionId { get; set; }
     public int? BlockingSessionId { get; set; }
     
-    [MaxLength(500)]
+    /// <summary>Full query text (no size limit)</summary>
     public string? QueryText { get; set; }
     
     public long WaitTimeMs { get; set; }
@@ -81,4 +88,22 @@ public class BlockingHistoryEntity
     public string? WaitType { get; set; }
     
     public bool IsLeadBlocker { get; set; }
+    
+    /// <summary>XML execution plan for this blocked query</summary>
+    public string? ExecutionPlan { get; set; }
+}
+
+[Table("UserPreferences")]
+public class UserPreferenceEntity
+{
+    [Key]
+    [MaxLength(64)]
+    public string UserIdentifier { get; set; } = "";
+
+    /// <summary>
+    /// JSON serialized user preferences
+    /// </summary>
+    public string PreferencesJson { get; set; } = "{}";
+
+    public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
 }

@@ -83,3 +83,6 @@ secrets.json
 # Test results
 TestResults/
 *.trx
+Data/connections.encrypted.json
+
+Data/keys/

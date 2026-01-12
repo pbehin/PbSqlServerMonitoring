@@ -146,6 +146,11 @@ public sealed class ConnectionService
             {
                 throw new ArgumentException("Username is required for SQL Authentication", nameof(parameters));
             }
+
+            if (string.IsNullOrWhiteSpace(parameters.Password))
+            {
+                throw new ArgumentException("Password is required for SQL Authentication", nameof(parameters));
+            }
             
             builder.UserID = parameters.Username.Trim();
             builder.Password = parameters.Password ?? string.Empty;
@@ -158,7 +163,7 @@ public sealed class ConnectionService
     /// Tests a connection string without storing it.
     /// Returns success status, message, and server version.
     /// </summary>
-    public async Task<ConnectionTestResult> TestConnectionAsync(string connectionString)
+    public async Task<ConnectionTestResult> TestConnectionAsync(string connectionString, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNullOrWhiteSpace(connectionString);
         
@@ -172,10 +177,10 @@ public sealed class ConnectionService
                 ConnectTimeout = 10
             }.ConnectionString;
 
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
 
             // Get server version
-            var version = await GetServerVersionAsync(connection);
+            var version = await GetServerVersionAsync(connection, cancellationToken);
 
             return new ConnectionTestResult
             {
@@ -276,12 +281,12 @@ public sealed class ConnectionService
             MetricsConstants.MaxConnectionTimeoutSeconds);
     }
     
-    private static async Task<string> GetServerVersionAsync(SqlConnection connection)
+    private static async Task<string> GetServerVersionAsync(SqlConnection connection, CancellationToken cancellationToken = default)
     {
         using var command = new SqlCommand("SELECT @@VERSION", connection);
         command.CommandTimeout = 5;
         
-        var result = await command.ExecuteScalarAsync();
+        var result = await command.ExecuteScalarAsync(cancellationToken);
         var fullVersion = result?.ToString() ?? "Unknown";
         
         // Return only first line

@@ -16,16 +16,12 @@ public sealed class QueryPerformanceService : BaseMonitoringService
     #region SQL Queries
     
     /// <summary>
-    /// Base query for performance metrics.
-    /// Uses NOLOCK hint and filters out system queries.
-    /// </summary>
-    /// <summary>
-    /// Base query for performance metrics.
-    /// OPTIMIZED: Selects Top N from stats FIRST, then joins to text to avoid expensive function calls on all rows.
-    /// </summary>
-    /// <summary>
-    /// Base query for performance metrics.
-    /// OPTIMIZED: Uses derived table to sort/filter stats BEFORE joining to text.
+    /// Base query for performance metrics optimized for minimal overhead.
+    /// 
+    /// Optimization Strategy:
+    /// - Uses derived table to sort/filter stats BEFORE joining to text functions
+    /// - Selects Top N from stats FIRST, then joins to text to avoid expensive function calls on all rows
+    /// - Uses NOLOCK hint and filters out system queries
     /// </summary>
     private const string BasePerformanceQuery = @"
         SELECT 
@@ -58,7 +54,8 @@ public sealed class QueryPerformanceService : BaseMonitoringService
                  THEN qs.total_physical_reads / qs.execution_count 
                  ELSE 0 END AS AvgPhysicalReads,
             qs.last_execution_time AS LastExecutionTime,
-            qs.creation_time AS CreationTime
+            qs.creation_time AS CreationTime,
+            CONVERT(NVARCHAR(MAX), qp.query_plan) AS ExecutionPlan
         FROM (
             SELECT TOP (@TopN)
                 qs.plan_handle,
@@ -81,6 +78,7 @@ public sealed class QueryPerformanceService : BaseMonitoringService
         ) AS qs
         CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
         OUTER APPLY sys.dm_exec_plan_attributes(qs.plan_handle) pa
+        OUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) qp
         WHERE pa.attribute = 'dbid'
           AND st.text NOT LIKE '%sys.dm_%'
           AND st.text NOT LIKE '%FETCH API_CURSOR%'";
@@ -109,29 +107,34 @@ public sealed class QueryPerformanceService : BaseMonitoringService
     /// Gets top queries by total CPU time.
     /// </summary>
     /// <param name="topN">Number of results (max 100)</param>
-    public Task<List<QueryPerformance>> GetTopCpuQueriesAsync(int topN = 25)
+    public Task<List<QueryPerformance>> GetTopCpuQueriesAsync(int topN = 25, string? connectionString = null, bool includeExecutionPlan = false)
     {
         var sql = BasePerformanceQuery.Replace("{ORDER_BY_CLAUSE}", OrderByCpu);
-        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN));
+        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN), connectionString, includeExecutionPlan);
     }
 
     /// <summary>
     /// Gets top queries by logical reads (IO).
     /// </summary>
     /// <param name="topN">Number of results (max 100)</param>
-    public Task<List<QueryPerformance>> GetTopIoQueriesAsync(int topN = 25)
+    public Task<List<QueryPerformance>> GetTopIoQueriesAsync(int topN = 25, string? connectionString = null, bool includeExecutionPlan = false)
     {
         var sql = BasePerformanceQuery.Replace("{ORDER_BY_CLAUSE}", OrderByIo);
-        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN));
+        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN), connectionString, includeExecutionPlan);
     }
 
     /// <summary>
     /// Gets top queries by active CPU time (currently running requests).
     /// </summary>
     /// <param name="topN">Number of results (max 100)</param>
-    public Task<List<QueryPerformance>> GetActiveHighCpuQueriesAsync(int topN = 5)
+    public Task<List<QueryPerformance>> GetActiveHighCpuQueriesAsync(int topN = 5, string? connectionString = null, bool includeExecutionPlan = false)
     {
-        const string sql = @"
+        // Dynamic determination of plan column based on flag
+        var planColumn = includeExecutionPlan 
+            ? "CONVERT(NVARCHAR(MAX), qp.query_plan) AS ExecutionPlan"
+            : "NULL AS ExecutionPlan";
+
+        var sql = $@"
             SELECT TOP (@TopN)
                 CONVERT(VARCHAR(64), r.query_hash, 1) AS QueryHash,
                 SUBSTRING(t.text, (r.statement_start_offset/2) + 1,
@@ -149,41 +152,59 @@ public sealed class QueryPerformanceService : BaseMonitoringService
                 r.reads AS TotalPhysicalReads,
                 r.reads AS AvgPhysicalReads,
                 r.start_time AS LastExecutionTime,
-                r.start_time AS CreationTime
+                r.start_time AS CreationTime,
+                {planColumn}
             FROM sys.dm_exec_requests r WITH (NOLOCK)
             CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+            OUTER APPLY sys.dm_exec_query_plan(r.plan_handle) qp
             WHERE r.session_id > 50 
               AND r.session_id <> @@SPID
               AND r.cpu_time > 0
             ORDER BY r.cpu_time DESC";
 
-        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN));
+        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN), connectionString);
     }
 
     /// <summary>
     /// Gets slowest queries by average elapsed time.
     /// </summary>
     /// <param name="topN">Number of results (max 100)</param>
-    public Task<List<QueryPerformance>> GetSlowestQueriesAsync(int topN = 25)
+    public Task<List<QueryPerformance>> GetSlowestQueriesAsync(int topN = 25, string? connectionString = null, bool includeExecutionPlan = false)
     {
         var sql = BasePerformanceQuery.Replace("{ORDER_BY_CLAUSE}", OrderByDuration);
-        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN));
+        return ExecutePerformanceQueryAsync(sql, ClampTopN(topN), connectionString, includeExecutionPlan);
     }
     
     #endregion
 
     #region Private Methods
     
-    private Task<List<QueryPerformance>> ExecutePerformanceQueryAsync(string sql, int topN)
+    private Task<List<QueryPerformance>> ExecutePerformanceQueryAsync(string sql, int topN, string? connectionString = null, bool includeExecutionPlan = false)
     {
+        // For BasePerformanceQuery (which is a const string), we can't use string interpolation for logic easily inside the const.
+        // So we will replace the column definition in the SQL string.
+        // Ideally, we'd restructure the query builder, but for minimal change, we'll swap the column selection.
+        
+        // This relies on the specific string: "CONVERT(NVARCHAR(MAX), qp.query_plan) AS ExecutionPlan"
+        // If we want to exclude it, we replace it with "NULL AS ExecutionPlan"
+        
+        string finalSql = sql;
+        if (!includeExecutionPlan && sql.Contains("CONVERT(NVARCHAR(MAX), qp.query_plan) AS ExecutionPlan"))
+        {
+            finalSql = sql.Replace(
+                "CONVERT(NVARCHAR(MAX), qp.query_plan) AS ExecutionPlan", 
+                "NULL AS ExecutionPlan");
+        }
+
         return ExecuteMonitoringQueryAsync(
-            sql,
+            finalSql,
             MapQueryPerformance,
             cmd => 
             {
                 cmd.Parameters.AddWithValue("@TopN", topN);
             },
-            timeoutSeconds: 30); // Explicit 30s timeout for heavy query reports
+            timeoutSeconds: 30,
+            connectionString: connectionString); // Explicit 30s timeout for heavy query reports
     }
 
     private static QueryPerformance MapQueryPerformance(Microsoft.Data.SqlClient.SqlDataReader reader)
@@ -205,7 +226,8 @@ public sealed class QueryPerformanceService : BaseMonitoringService
             TotalPhysicalReads = ReadInt64(reader, 12),
             AvgPhysicalReads = ReadInt64(reader, 13),
             LastExecutionTime = ReadDateTime(reader, 14),
-            CreationTime = ReadDateTime(reader, 15)
+            CreationTime = ReadDateTime(reader, 15),
+            ExecutionPlan = ReadString(reader, 16)
         };
     }
 

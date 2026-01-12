@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 
 namespace PbSqlServerMonitoring.Security;
@@ -90,6 +91,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         var claims = new[]
         {
             new Claim(ClaimTypes.Name, username),
+            new Claim(ClaimTypes.NameIdentifier, username), // Required for user-specific connection filtering
             new Claim(ClaimTypes.AuthenticationMethod, "ApiKey")
         };
         

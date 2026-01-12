@@ -12,12 +12,13 @@ const Utils = {
     },
 
     /**
-     * Truncate text with ellipsis
+     * Truncate text with ellipsis.
+     * Note: Output is HTML-escaped for safe use in innerHTML.
      */
     truncateText(text, maxLength = 50) {
         if (!text) return '';
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength - 3) + '...';
+        const truncated = text.length <= maxLength ? text : text.substring(0, maxLength - 3) + '...';
+        return this.escapeHtml(truncated);
     },
 
     /**

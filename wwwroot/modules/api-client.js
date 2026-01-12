@@ -61,7 +61,19 @@ class ApiClient {
             body: JSON.stringify(data)
         });
 
-        return response.json();
+        const result = await response.json();
+        
+        if (!response.ok) {
+            // Extract error message from response
+            const errorMessage = result.error || result.message || `API error: ${response.status} ${response.statusText}`;
+            const error = new Error(errorMessage);
+            error.status = response.status;
+            error.details = result.details;
+            error.requiresEmailConfirmation = result.requiresEmailConfirmation;
+            throw error;
+        }
+
+        return result;
     }
 
     /**

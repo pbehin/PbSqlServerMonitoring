@@ -5,7 +5,7 @@
 
 class SqlMonitorApp {
     constructor() {
-        this.currentSection = 'dashboard';
+        this.currentSection = 'setup';
         this.currentQueryTab = 'cpu';
 
         // Consolidated polling - single interval for all dashboard data
@@ -18,6 +18,7 @@ class SqlMonitorApp {
 
         // Data cache and sort state (now delegated to tableManager module)
         this.dataCache = {};
+        this.activeConnectionId = null; // Will be loaded from server
         this.sortState = {
             queriesTable: { col: null, dir: 'desc' },
             topCpuTable: { col: null, dir: 'desc' },
@@ -32,12 +33,163 @@ class SqlMonitorApp {
         this.init();
     }
 
-    init() {
+    async init() {
+        // Initialize Authentication FIRST (required for all API calls)
+        this.authManager = new AuthManager(window.apiClient);
+        window.authManager = this.authManager; // Make globally accessible
+        await this.authManager.init();
+
+        // Initialize multi-connection manager (will load connections if authenticated)
+        if (window.MultiConnectionManager) {
+            await window.MultiConnectionManager.init();
+        }
+
         this.bindEvents();
-        this.loadConnectionSettings();
         this.initCharts();
+
+        // Always hide connection menus initially - user must select a connection from Setup
+        this.hideConnectionMenus();
+
+        // Check for saved state (restore last page if authenticated and connected)
+        this.restoreState();
+    }
+
+    async restoreState() {
+        // We need to wait for auth to be fully checked
+        if (!this.authManager?.isAuthenticated) {
+            this.navigateTo('setup');
+            return;
+        }
+
+        // Load active connection ID
+        await this.loadActiveConnection();
+
+        // Check if we have a saved section and an active connection
+        const lastSection = sessionStorage.getItem('lastSection');
+        const lastQueryTab = sessionStorage.getItem('lastQueryTab');
+
+        // Restore query tab preference regardless of section
+        if (lastQueryTab) {
+            this.currentQueryTab = lastQueryTab;
+            // Update UI for query tabs if they exist
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === lastQueryTab);
+            });
+        }
+
+        if (this.activeConnectionId && lastSection && lastSection !== 'setup') {
+            console.log(`Restoring session: Section=${lastSection}, Connection=${this.activeConnectionId}`);
+
+            // Show menus since we have a connection
+            this.showConnectionMenus();
+
+            // Navigate to the saved section
+            this.navigateTo(lastSection);
+
+            // Trigger data load
+            this.loadAllData();
+
+            // Start polling
+            if (!this.pollingInterval) {
+                this.startConsolidatedPolling();
+            }
+        } else {
+            // Default behavior: Setup page
+            this.navigateTo('setup');
+        }
+    }
+
+    /**
+     * Load the user's active connection ID from the server.
+     * Called after authentication is established and when user logs in.
+     * Note: This only loads the ID, it does NOT show menus - user must click Connect.
+     */
+    async loadActiveConnection() {
+        // Only try if authenticated
+        if (!this.authManager?.isAuthenticated) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/connections/active');
+            if (response.ok) {
+                const data = await response.json();
+                this.activeConnectionId = data.activeConnectionId;
+                // Note: We intentionally don't show menus here.
+                // User must explicitly click Connect on Setup page.
+            }
+        } catch (e) {
+            console.error("Failed to load active connection", e);
+        }
+    }
+
+    async setActiveConnection(connectionId) {
+        this.activeConnectionId = connectionId;
+
+        // Save to server
+        try {
+            await fetch('/api/connections/active', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ connectionId: connectionId })
+            });
+        } catch (e) {
+            console.error("Failed to save active connection preference", e);
+        }
+
+        // Show menu items that require a connection
+        this.showConnectionMenus();
+
+        // Navigate to dashboard and load data
+        this.navigateTo('dashboard');
         this.loadAllData();
-        this.startConsolidatedPolling();
+
+        if (!this.pollingInterval) {
+            this.startConsolidatedPolling();
+        }
+    }
+
+    showConnectionMenus() {
+        // Show all menu items that require a connection
+        // Setup menu always remains visible
+        document.querySelectorAll('.nav-item.requires-connection').forEach(item => {
+            item.style.display = '';
+        });
+    }
+
+    hideConnectionMenus() {
+        // Hide all menu items that require a connection
+        // Setup menu always remains visible
+        document.querySelectorAll('.nav-item.requires-connection').forEach(item => {
+            item.style.display = 'none';
+        });
+    }
+
+    clearActiveConnection() {
+        // Clear the active connection
+        this.activeConnectionId = null;
+
+        // Stop any ongoing polling
+        this.stopPolling();
+
+        // Hide connection menus and show Setup
+        this.hideConnectionMenus();
+
+        // Navigate to setup
+        this.navigateTo('setup');
+    }
+
+    async fetchWithAuth(url, options = {}) {
+        if (!this.activeConnectionId) {
+            // Allow some endpoints if strictly necessary, but most monitoring needs ID.
+            throw new Error("No active connection selected");
+        }
+
+        const headers = options.headers || {};
+        headers['X-Connection-Id'] = this.activeConnectionId;
+        options.headers = headers;
+
+        return fetch(url, options);
     }
 
     bindEvents() {
@@ -47,6 +199,11 @@ class SqlMonitorApp {
                 const section = item.dataset.section;
                 this.navigateTo(section);
             });
+        });
+
+        // Change Server button - returns to Setup
+        document.getElementById('changeConnectionBtn')?.addEventListener('click', () => {
+            this.navigateTo('setup');
         });
 
         // View All links
@@ -103,6 +260,16 @@ class SqlMonitorApp {
             });
         });
 
+        // View execution plan button
+        document.getElementById('viewExecutionPlan').addEventListener('click', () => {
+            this.toggleExecutionPlan();
+        });
+
+        // Save execution plan button
+        document.getElementById('saveExecutionPlan').addEventListener('click', () => {
+            this.saveExecutionPlan();
+        });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -110,37 +277,34 @@ class SqlMonitorApp {
             }
         });
 
-        // Connection status click - go to settings
-        document.getElementById('connectionStatus').addEventListener('click', () => {
-            this.navigateTo('settings');
+        // Connection status click - go to setup
+        document.getElementById('connectionStatus')?.addEventListener('click', () => {
+            this.navigateTo('setup');
         });
-        document.getElementById('connectionStatus').classList.add('clickable');
+        document.getElementById('connectionStatus')?.classList.add('clickable');
 
-        // Settings form - Windows Auth toggle
-        document.getElementById('windowsAuthCheck').addEventListener('change', (e) => {
-            const sqlAuthFields = document.getElementById('sqlAuthFields');
-            if (e.target.checked) {
-                sqlAuthFields.classList.add('hidden');
-            } else {
-                sqlAuthFields.classList.remove('hidden');
-            }
-        });
+        // Settings form elements removed - using multi-connection setup now
 
-        // Test Connection button
-        document.getElementById('testConnectionBtn').addEventListener('click', () => {
-            this.testConnection();
-        });
 
-        // Save Connection form submit
+
+
+
+        // Save Connection form submit - REMOVED (Old Settings)
+        /*
         document.getElementById('connectionForm').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveConnection();
         });
+        */
 
         // Clear Connection button
-        document.getElementById('clearConnectionBtn').addEventListener('click', () => {
-            this.clearConnectionSettings();
-        });
+        // Clear Connection button (optional, may not exist in new layout)
+        const clearBtn = document.getElementById('clearConnectionBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                this.clearConnectionSettings();
+            });
+        }
 
         // Chart time range selector
         document.getElementById('chartTimeRange').addEventListener('change', (e) => {
@@ -182,6 +346,16 @@ class SqlMonitorApp {
     navigateTo(section) {
         this.currentSection = section;
 
+        // Save state
+        sessionStorage.setItem('lastSection', section);
+
+        // When navigating to Setup, clear the connection and stop polling
+        if (section === 'setup') {
+            this.activeConnectionId = null;
+            this.stopPolling();
+            this.hideConnectionMenus();
+        }
+
         // Update nav
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.toggle('active', item.dataset.section === section);
@@ -196,16 +370,24 @@ class SqlMonitorApp {
         const titles = {
             'dashboard': ['Dashboard', 'Real-time SQL Server performance monitoring'],
             'running': ['Running Queries', 'Currently executing queries on the server'],
-            'queries': ['Query Performance', 'Analyze CPU, IO, and execution time of queries'],
+            'queries': ['Queries Performance', 'Analyze CPU, IO, and execution time of queries'],
             'indexes': ['Missing Indexes', 'Index recommendations to improve performance'],
             'blocking': ['Blocking Sessions', 'Monitor active blocking chains'],
             'locks': ['Lock Analysis', 'Current locks and wait statistics'],
-            'settings': ['Settings', 'Configure SQL Server connection']
+            'setup': ['Connection Setup', 'Manage SQL Server connections']
         };
 
         if (titles[section]) {
             document.getElementById('pageTitle').textContent = titles[section][0];
             document.getElementById('pageSubtitle').textContent = titles[section][1];
+        }
+
+        // Fix for Chart.js rendering in hidden tabs
+        if (section === 'dashboard') {
+            setTimeout(() => {
+                if (this.connectionsChart) this.connectionsChart.resize();
+                if (this.memoryChart) this.memoryChart.resize();
+            }, 100);
         }
 
         // Load section-specific data
@@ -214,6 +396,11 @@ class SqlMonitorApp {
 
     loadSectionData(section) {
         switch (section) {
+            case 'dashboard':
+                this.loadServerHealth();
+                this.loadChartData();
+                this.loadTopCpuQueries();
+                break;
             case 'running':
                 this.loadRunningQueries();
                 break;
@@ -229,14 +416,17 @@ class SqlMonitorApp {
             case 'locks':
                 this.loadLocks();
                 break;
-            case 'settings':
-                this.loadConnectionSettings();
+            case 'setup':
+                if (window.MultiConnectionManager) {
+                    window.MultiConnectionManager.loadConnections();
+                }
                 break;
         }
     }
 
     switchQueryTab(tab) {
         this.currentQueryTab = tab;
+        sessionStorage.setItem('lastQueryTab', tab);
 
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.tab === tab);
@@ -246,6 +436,8 @@ class SqlMonitorApp {
     }
 
     async loadAllData() {
+        if (!this.activeConnectionId) return;
+
         const tasks = [
             this.loadServerHealth()
         ];
@@ -376,11 +568,14 @@ class SqlMonitorApp {
         const timeRange = document.getElementById('chartTimeRange')?.value || 60;
 
         try {
-            const response = await fetch(`/api/metrics/history?rangeSeconds=${timeRange}&pageSize=1000`);
+            const url = `/api/metrics/history?rangeSeconds=${timeRange}&pageSize=1000`;
+
+            const response = await this.fetchWithAuth(url);
             const result = await response.json();
 
             // Handle paginated response (new format) or array (legacy)
             const data = result.items || result;
+
 
             if (!data || data.length === 0) return;
 
@@ -400,14 +595,14 @@ class SqlMonitorApp {
                 this.connectionsChart.data.labels = labels;
                 this.connectionsChart.data.datasets[0].data = data.map(d => d.connections);
                 this.connectionsChart.data.datasets[1].data = data.map(d => d.blocked);
-                this.connectionsChart.update('none');
+                this.connectionsChart.update();
             }
 
             // Update memory chart
             if (this.memoryChart) {
                 this.memoryChart.data.labels = labels;
                 this.memoryChart.data.datasets[0].data = data.map(d => d.memory);
-                this.memoryChart.update('none');
+                this.memoryChart.update();
             }
         } catch (error) {
             console.error('Failed to load chart data:', error);
@@ -427,7 +622,7 @@ class SqlMonitorApp {
             const fromISO = new Date(fromDate).toISOString();
             const toISO = new Date(toDate).toISOString();
 
-            const response = await fetch(`/api/metrics/history/range?from=${fromISO}&to=${toISO}&pageSize=1000`);
+            const response = await this.fetchWithAuth(`/api/metrics/history/range?from=${fromISO}&to=${toISO}&pageSize=1000`);
             const result = await response.json();
 
             // Handle paginated response (new format) or array (legacy)
@@ -692,19 +887,14 @@ class SqlMonitorApp {
     // ========== Server Health ==========
 
     async loadServerHealth() {
-        const connectionBanner = document.getElementById('connectionBanner');
-
         try {
-            const response = await fetch('/api/health');
+            const response = await this.fetchWithAuth('/api/health');
             const data = await response.json();
 
             const statusDot = document.querySelector('.status-dot');
             const statusText = document.querySelector('.status-text');
 
             if (data.isConnected) {
-                // Hide banner when connected
-                connectionBanner.style.display = 'none';
-
                 statusDot.className = 'status-dot connected';
                 statusText.textContent = 'Connected';
 
@@ -727,9 +917,6 @@ class SqlMonitorApp {
                     blockedCard.style.borderColor = 'var(--color-border-light)';
                 }
             } else {
-                // Show banner when not connected
-                connectionBanner.style.display = 'block';
-
                 statusDot.className = 'status-dot error';
                 statusText.textContent = 'Not Connected';
 
@@ -740,8 +927,6 @@ class SqlMonitorApp {
             }
         } catch (error) {
             console.error('Failed to load server health:', error);
-            // Show banner on error too
-            connectionBanner.style.display = 'block';
 
             const statusDot = document.querySelector('.status-dot');
             const statusText = document.querySelector('.status-text');
@@ -760,8 +945,11 @@ class SqlMonitorApp {
         }
 
         try {
-            const response = await fetch('/api/queries/active-cpu?top=5&_=' + Date.now());
-            const data = await response.json();
+            const response = await this.fetchWithAuth('/api/queries/active-cpu?top=5&_=' + Date.now());
+            const result = await response.json();
+
+            // Handle paginated response - extract items array
+            const data = result.items || result || [];
 
             this.dataCache.topCpu = data;
             this.renderTopCpuTable(data);
@@ -789,12 +977,12 @@ class SqlMonitorApp {
         sortedData.forEach(query => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.truncateText(query.queryText, 50)}</td>
+                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.escapeHtml(query.queryText)}</td>
                 <td class="number">${this.formatNumber(Math.round(query.avgCpuTimeMs))}</td>
                 <td class="number">${this.formatNumber(query.executionCount)}</td>
             `;
             row.querySelector('.query-text').addEventListener('click', () => {
-                this.showQueryModal(query.queryText);
+                this.showQueryModal(query.queryText, query.executionPlan, query.queryHash);
             });
             tbody.appendChild(row);
         });
@@ -809,11 +997,14 @@ class SqlMonitorApp {
         if (loadingEl) loadingEl.style.display = 'inline-flex';
 
         try {
-            const response = await fetch('/api/running/active');
-            const data = await response.json();
+            const response = await this.fetchWithAuth('/api/running/active');
+            const result = await response.json();
+
+            // Handle paginated response - extract items array
+            const data = result.items || result || [];
 
             // Update count badge
-            if (countEl) countEl.textContent = `${data.length} Running`;
+            if (countEl) countEl.textContent = `${result.totalCount || data.length} Running`;
 
             this.dataCache.running = data;
             this.renderRunningTable(data);
@@ -850,13 +1041,13 @@ class SqlMonitorApp {
                 <td class="number">${this.formatNumber(query.logicalReads)}</td>
                 <td>${query.waitType || '-'}</td>
                 <td>${query.hostName}</td>
-                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.truncateText(query.queryText, 40)}</td>
+                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.escapeHtml(query.queryText)}</td>
             `;
 
             const queryCell = row.querySelector('.query-text');
             if (queryCell && query.queryText) {
                 queryCell.addEventListener('click', () => {
-                    this.showQueryModal(query.queryText);
+                    this.showQueryModal(query.queryText, null, query.queryHash);
                 });
             }
             tbody.appendChild(row);
@@ -965,8 +1156,11 @@ class SqlMonitorApp {
             const sortBy = type === 'cpu' ? 'cpu' : type === 'io' ? 'io' : 'elapsed';
             const url = `/api/queries/history?hours=${hours}&sortBy=${sortBy}&_=${Date.now()}`;
 
-            const response = await fetch(url);
-            const data = await response.json();
+            const response = await this.fetchWithAuth(url);
+            const result = await response.json();
+
+            // Handle paginated response - extract items array
+            const data = result.items || result || [];
 
             this.dataCache.queries = data;
             this.renderQueriesTable(data);
@@ -993,7 +1187,7 @@ class SqlMonitorApp {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${query.databaseName || 'Unknown'}</td>
-                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.truncateText(query.queryText, 60)}</td>
+                <td class="query-text" title="${this.escapeHtml(query.queryText)}">${this.escapeHtml(query.queryText)}</td>
                 <td class="number">${this.formatNumber(query.executionCount)}</td>
                 <td class="number">${this.formatNumber(Math.round(query.avgCpuTimeMs))}</td>
                 <td class="number">${this.formatNumber(Math.round(query.totalCpuTimeMs))}</td>
@@ -1003,7 +1197,7 @@ class SqlMonitorApp {
                 <td>${this.formatDate(query.lastExecutionTime)}</td>
             `;
             row.querySelector('.query-text').addEventListener('click', () => {
-                this.showQueryModal(query.queryText);
+                this.showQueryModal(query.queryText, query.executionPlan, query.queryHash);
             });
             tbody.appendChild(row);
         });
@@ -1016,8 +1210,11 @@ class SqlMonitorApp {
         tbody.innerHTML = '<tr><td colspan="8" class="loading-row"><span class="loading"></span> Loading...</td></tr>';
 
         try {
-            const response = await fetch('/api/indexes/missing?top=50');
-            const data = await response.json();
+            const response = await this.fetchWithAuth('/api/indexes/missing?top=50');
+            const result = await response.json();
+
+            // Handle paginated response
+            const data = result.items || result || [];
 
             this.dataCache.indexes = data;
             this.renderIndexesTable(data);
@@ -1070,7 +1267,7 @@ class SqlMonitorApp {
         }
 
         try {
-            const response = await fetch('/api/blocking/active');
+            const response = await this.fetchWithAuth('/api/blocking/active');
             const data = await response.json();
 
             this.dataCache.blocking = data;
@@ -1138,12 +1335,12 @@ class SqlMonitorApp {
                     <td>${session.databaseName}</td>
                     <td>${session.hostName}</td>
                     <td>${session.loginName}</td>
-                    <td class="query-text" title="${this.escapeHtml(session.queryText)}">${this.truncateText(session.queryText, 50)}</td>
+                    <td class="query-text" title="${this.escapeHtml(session.queryText)}">${this.escapeHtml(session.queryText)}</td>
                 `;
                 const queryCell = row.querySelector('.query-text');
                 if (queryCell && session.queryText) {
                     queryCell.addEventListener('click', () => {
-                        this.showQueryModal(session.queryText);
+                        this.showQueryModal(session.queryText, session.executionPlan);
                     });
                 }
                 tbody.appendChild(row);
@@ -1158,8 +1355,11 @@ class SqlMonitorApp {
         tbody.innerHTML = '<tr><td colspan="9" class="loading-row"><span class="loading"></span> Loading...</td></tr>';
 
         try {
-            const response = await fetch('/api/locks/current');
-            const data = await response.json();
+            const response = await this.fetchWithAuth('/api/locks/current');
+            const result = await response.json();
+
+            // Handle paginated response (new format) or array (legacy)
+            const data = result.items || result || [];
 
             this.dataCache.locks = data;
             this.renderLocksTable(data);
@@ -1208,9 +1408,126 @@ class SqlMonitorApp {
         return 'warning';
     }
 
-    showQueryModal(queryText) {
+    showQueryModal(queryText, executionPlan = null, queryHash = null) {
         document.getElementById('queryDetail').textContent = queryText;
+
+        // Handle execution plan button and section
+        const viewPlanBtn = document.getElementById('viewExecutionPlan');
+        const planSection = document.getElementById('executionPlanSection');
+        const planDetail = document.getElementById('executionPlanDetail');
+
+        // Store the execution plan for later use
+        this.currentExecutionPlan = executionPlan;
+        this.currentQueryHash = queryHash;
+
+        // Reset state
+        planSection.style.display = 'none';
+        planDetail.textContent = '';
+        viewPlanBtn.disabled = false;
+        document.getElementById('saveExecutionPlan').style.display = 'none';
+
+        if (executionPlan || queryHash) {
+            viewPlanBtn.style.display = 'inline-flex';
+            viewPlanBtn.textContent = 'View Execution Plan';
+        } else {
+            viewPlanBtn.style.display = 'none';
+        }
+
         document.getElementById('queryModal').classList.add('active');
+    }
+
+    async toggleExecutionPlan() {
+        const planSection = document.getElementById('executionPlanSection');
+        const planDetail = document.getElementById('executionPlanDetail');
+        const viewPlanBtn = document.getElementById('viewExecutionPlan');
+        const savePlanBtn = document.getElementById('saveExecutionPlan');
+
+        if (planSection.style.display === 'none') {
+            // Show execution plan
+            planSection.style.display = 'block';
+            viewPlanBtn.textContent = 'Hide Execution Plan';
+
+            if (this.currentExecutionPlan) {
+                // Already have it
+                planDetail.textContent = this.formatXml(this.currentExecutionPlan);
+                savePlanBtn.style.display = 'inline-flex';
+            } else if (this.currentQueryHash) {
+                // Fetch it
+                planDetail.innerHTML = '<span class="loading"></span> Loading execution plan...';
+                viewPlanBtn.disabled = true;
+                savePlanBtn.style.display = 'none';
+
+                try {
+                    const response = await this.fetchWithAuth(`/api/queries/plan/${this.currentQueryHash}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.currentExecutionPlan = data.executionPlan;
+                        planDetail.textContent = this.formatXml(this.currentExecutionPlan);
+                        savePlanBtn.style.display = 'inline-flex';
+                    } else {
+                        const err = await response.json();
+                        planDetail.textContent = `Failed to load plan: ${err.message || 'Unknown error'}`;
+                    }
+                } catch (e) {
+                    planDetail.textContent = `Error loading plan: ${e.message}`;
+                } finally {
+                    viewPlanBtn.disabled = false;
+                }
+            } else {
+                planDetail.textContent = 'No execution plan available.';
+            }
+        } else {
+            // Hide execution plan
+            planSection.style.display = 'none';
+            viewPlanBtn.textContent = 'View Execution Plan';
+            savePlanBtn.style.display = 'none';
+        }
+    }
+
+    saveExecutionPlan() {
+        if (!this.currentExecutionPlan) return;
+
+        try {
+            const blob = new Blob([this.currentExecutionPlan], { type: 'application/xml' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `execution_plan_${new Date().toISOString().replace(/[:.]/g, '-')}.sqlplan`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (e) {
+            console.error('Failed to save execution plan', e);
+        }
+    }
+
+    formatXml(xml) {
+        if (!xml) return '';
+        try {
+            // Simple XML formatting - add newlines and indentation
+            let formatted = '';
+            let indent = 0;
+            const parts = xml.replace(/></g, '>\n<').split('\n');
+
+            parts.forEach(part => {
+                // Decrease indent for closing tags
+                if (part.match(/^<\/\w/)) {
+                    indent = Math.max(0, indent - 1);
+                }
+
+                formatted += '  '.repeat(indent) + part.trim() + '\n';
+
+                // Increase indent for opening tags (not self-closing)
+                if (part.match(/^<\w[^>]*[^\/]>.*$/) && !part.match(/^<\w[^>]*\/>/)) {
+                    indent++;
+                }
+            });
+
+            return formatted.trim();
+        } catch (e) {
+            return xml; // Return original if formatting fails
+        }
     }
 
     closeModal() {
@@ -1224,8 +1541,9 @@ class SqlMonitorApp {
         tbody.innerHTML = '<tr><td colspan="4" class="loading-row"><span class="loading"></span> Loading history...</td></tr>';
 
         try {
-            const response = await fetch(`/api/metrics/blocking-history?rangeSeconds=172800&_=${Date.now()}`); // 2 days
-            const data = await response.json();
+            const response = await this.fetchWithAuth(`/api/metrics/blocking-history?rangeSeconds=172800&_=${Date.now()}`); // 2 days
+            const result = await response.json();
+            const data = result.items || result || [];
 
             // Process data
             const history = [];
@@ -1275,8 +1593,8 @@ class SqlMonitorApp {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${this.formatDate(item.time)}</td>
-                <td title="${this.escapeHtml(item.blocked)}">${this.truncateText(item.blocked, 60)}</td>
-                <td title="${this.escapeHtml(item.blocker)}">${this.truncateText(item.blocker, 60)}</td>
+                <td title="${this.escapeHtml(item.blocked)}">${this.escapeHtml(item.blocked)}</td>
+                <td title="${this.escapeHtml(item.blocker)}">${this.escapeHtml(item.blocker)}</td>
                 <td class="number">${this.formatNumber(item.wait)}</td>
             `;
             tbody.appendChild(row);

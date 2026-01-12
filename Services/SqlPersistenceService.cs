@@ -5,12 +5,13 @@ using PbSqlServerMonitoring.Models;
 
 namespace PbSqlServerMonitoring.Services;
 
-public sealed class SqlPersistenceService : IMetricsPersistenceService
+public sealed class SqlPersistenceService : IMetricsPersistenceService, IDisposable
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SqlPersistenceService> _logger;
     private readonly IConfiguration _configuration;
-    private volatile bool _dbEnsured;
+    private readonly SemaphoreSlim _dbInitLock = new(1, 1);
+    private int _dbEnsuredFlag; // 0 = not ensured, 1 = ensured (Interlocked-safe)
     private readonly bool _applyMigrations;
     private DateTime _nextCleanupUtc = DateTime.MinValue;
     private readonly int _retentionDays;
@@ -34,43 +35,57 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         _cleanupBatchSize = _configuration.GetValue("Persistence:CleanupBatchSize", MetricsConstants.CleanupBatchSize);
     }
 
-    public async Task EnsureDatabaseAsync()
+    public async Task EnsureDatabaseAsync(CancellationToken cancellationToken = default)
     {
-        if (_dbEnsured) return;
+        // Fast path: already ensured
+        if (Interlocked.CompareExchange(ref _dbEnsuredFlag, 0, 0) == 1) return;
 
-        if (!_applyMigrations)
-        {
-            _logger.LogInformation("Auto-migrations disabled (PB_MONITOR_AUTO_MIGRATE=false). Skipping EnsureDatabase.");
-            _dbEnsured = true; // prevent repeat attempts
-            await LogPendingMigrationsIfAny();
-            return;
-        }
-
+        // Use lock to ensure only one thread runs migrations
+        await _dbInitLock.WaitAsync(cancellationToken);
         try
         {
+            // Double-check after acquiring lock
+            if (Interlocked.CompareExchange(ref _dbEnsuredFlag, 0, 0) == 1) return;
+
+            if (!_applyMigrations)
+            {
+                _logger.LogInformation("Auto-migrations disabled (PB_MONITOR_AUTO_MIGRATE=false). Skipping EnsureDatabase.");
+                Interlocked.Exchange(ref _dbEnsuredFlag, 1);
+                await LogPendingMigrationsIfAny();
+                return;
+            }
+
             using var scope = _scopeFactory.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
             
             _logger.LogInformation("Applying database migrations...");
-            await context.Database.MigrateAsync();
-            _dbEnsured = true;
+            await context.Database.MigrateAsync(cancellationToken);
+            Interlocked.Exchange(ref _dbEnsuredFlag, 1);
             _logger.LogInformation("Database migrations applied successfully.");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Database migration was cancelled.");
+            throw;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to apply migrations.");
         }
+        finally
+        {
+            _dbInitLock.Release();
+        }
     }
 
-    public async Task SaveMetricsAsync(IEnumerable<MetricDataPoint> metrics, string serverName, string databaseName)
+    public async Task SaveMetricsAsync(IEnumerable<MetricDataPoint> metrics, string connectionId)
     {
         ArgumentNullException.ThrowIfNull(metrics);
-        ArgumentNullException.ThrowIfNullOrWhiteSpace(serverName);
-        ArgumentNullException.ThrowIfNullOrWhiteSpace(databaseName);
+        ArgumentNullException.ThrowIfNullOrWhiteSpace(connectionId);
         
         var metricsList = metrics.ToList();
         if (metricsList.Count == 0) return;
-        if (!_dbEnsured) await EnsureDatabaseAsync();
+        if (Interlocked.CompareExchange(ref _dbEnsuredFlag, 0, 0) == 0) await EnsureDatabaseAsync();
 
         try
         {
@@ -81,8 +96,9 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
             var snapshots = metricsList.Select(m => new MetricSnapshotEntity
             {
                 Timestamp = m.Timestamp,
-                ServerName = serverName,
-                DatabaseName = databaseName,
+                ConnectionId = connectionId,
+                ServerName = m.ServerName,
+                DatabaseName = m.DatabaseName,
                 CpuPercent = m.CpuPercent,
                 MemoryMb = m.MemoryMb,
                 ActiveConnections = m.ActiveConnections,
@@ -91,23 +107,25 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
                 TopQueries = m.TopQueries?.Select(q => new QueryHistoryEntity
                 {
                     QueryHash = q.QueryHash,
-                    QueryText = Truncate(q.QueryTextPreview, MetricsConstants.MaxQueryTextLength),
+                    QueryText = Truncate(q.QueryText, MetricsConstants.MaxQueryTextLength),
                     DatabaseName = q.DatabaseName,
                     AvgCpuTimeMs = q.AvgCpuTimeMs,
                     ExecutionCount = q.ExecutionCount,
                     LastExecutionTime = q.LastExecutionTime,
                     AvgLogicalReads = q.AvgLogicalReads,
                     AvgLogicalWrites = q.AvgLogicalWrites,
-                    AvgElapsedTimeMs = q.AvgElapsedTimeMs
+                    AvgElapsedTimeMs = q.AvgElapsedTimeMs,
+                    ExecutionPlan = q.ExecutionPlan
                 }).ToList() ?? [],
                 BlockedQueries = m.BlockedQueries?.Select(b => new BlockingHistoryEntity
                 {
                     SessionId = b.SessionId,
                     BlockingSessionId = b.BlockingSessionId,
-                    QueryText = Truncate(b.QueryTextPreview, MetricsConstants.MaxQueryTextLength),
+                    QueryText = Truncate(b.QueryText, MetricsConstants.MaxQueryTextLength),
                     WaitTimeMs = b.WaitTimeMs,
                     WaitType = b.WaitType,
-                    IsLeadBlocker = b.IsLeadBlocker
+                    IsLeadBlocker = b.IsLeadBlocker,
+                    ExecutionPlan = b.ExecutionPlan
                 }).ToList() ?? []
             }).ToList();
 
@@ -124,29 +142,29 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         }
     }
 
-    public async Task<List<MetricDataPoint>> GetMetricsAsync(int rangeSeconds, string serverName, string databaseName)
+    public async Task<List<MetricDataPoint>> GetMetricsAsync(int rangeSeconds, string connectionId)
     {
         var cutoff = DateTime.UtcNow.AddSeconds(-rangeSeconds);
-        return await GetMetricsInternalAsync(s => s.Timestamp >= cutoff, serverName, databaseName);
+        return await GetMetricsInternalAsync(s => s.Timestamp >= cutoff, connectionId);
     }
 
-    public async Task<List<MetricDataPoint>> GetMetricsByDateRangeAsync(DateTime from, DateTime to, string serverName, string databaseName)
+    public async Task<List<MetricDataPoint>> GetMetricsByDateRangeAsync(DateTime from, DateTime to, string connectionId)
     {
-        return await GetMetricsInternalAsync(s => s.Timestamp >= from && s.Timestamp <= to, serverName, databaseName);
+        return await GetMetricsInternalAsync(s => s.Timestamp >= from && s.Timestamp <= to, connectionId);
     }
 
-    public async Task<PagedResult<MetricDataPoint>> GetMetricsPagedAsync(int rangeSeconds, string serverName, string databaseName, int skip, int take, bool blockedOnly = false, bool includeBlockingDetails = false)
+    public async Task<PagedResult<MetricDataPoint>> GetMetricsPagedAsync(int rangeSeconds, string connectionId, int skip, int take, bool blockedOnly = false, bool includeBlockingDetails = false)
     {
         var cutoff = DateTime.UtcNow.AddSeconds(-rangeSeconds);
-        return await GetMetricsPagedInternalAsync(s => s.Timestamp >= cutoff, serverName, databaseName, skip, take, blockedOnly, includeBlockingDetails);
+        return await GetMetricsPagedInternalAsync(s => s.Timestamp >= cutoff, connectionId, skip, take, blockedOnly, includeBlockingDetails);
     }
 
-    public async Task<PagedResult<MetricDataPoint>> GetMetricsByDateRangePagedAsync(DateTime from, DateTime to, string serverName, string databaseName, int skip, int take, bool blockedOnly = false, bool includeBlockingDetails = false)
+    public async Task<PagedResult<MetricDataPoint>> GetMetricsByDateRangePagedAsync(DateTime from, DateTime to, string connectionId, int skip, int take, bool blockedOnly = false, bool includeBlockingDetails = false)
     {
-        return await GetMetricsPagedInternalAsync(s => s.Timestamp >= from && s.Timestamp <= to, serverName, databaseName, skip, take, blockedOnly, includeBlockingDetails);
+        return await GetMetricsPagedInternalAsync(s => s.Timestamp >= from && s.Timestamp <= to, connectionId, skip, take, blockedOnly, includeBlockingDetails);
     }
 
-    private async Task<List<MetricDataPoint>> GetMetricsInternalAsync(System.Linq.Expressions.Expression<Func<MetricSnapshotEntity, bool>> predicate, string serverName, string databaseName)
+    private async Task<List<MetricDataPoint>> GetMetricsInternalAsync(System.Linq.Expressions.Expression<Func<MetricSnapshotEntity, bool>> predicate, string connectionId)
     {
          using var scope = _scopeFactory.CreateScope();
          var context = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
@@ -155,7 +173,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
          {
              var entities = await context.MetricSnapshots
                 .AsNoTracking()
-                .Where(s => s.ServerName == (serverName ?? "") && s.DatabaseName == (databaseName ?? ""))
+                .Where(s => s.ConnectionId == (connectionId ?? ""))
                 .Where(predicate)
                 .Include(s => s.TopQueries)
                 .Include(s => s.BlockedQueries)
@@ -172,7 +190,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
          }
     }
 
-    private async Task<PagedResult<MetricDataPoint>> GetMetricsPagedInternalAsync(System.Linq.Expressions.Expression<Func<MetricSnapshotEntity, bool>> predicate, string serverName, string databaseName, int skip, int take, bool blockedOnly, bool includeBlockingDetails)
+    private async Task<PagedResult<MetricDataPoint>> GetMetricsPagedInternalAsync(System.Linq.Expressions.Expression<Func<MetricSnapshotEntity, bool>> predicate, string connectionId, int skip, int take, bool blockedOnly, bool includeBlockingDetails)
     {
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
@@ -181,7 +199,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         {
             IQueryable<MetricSnapshotEntity> baseQuery = context.MetricSnapshots
                 .AsNoTracking()
-                .Where(s => s.ServerName == (serverName ?? "") && s.DatabaseName == (databaseName ?? ""))
+                .Where(s => s.ConnectionId == (connectionId ?? ""))
                 .Where(predicate);
 
             if (blockedOnly)
@@ -215,10 +233,12 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
                     {
                         SessionId = b.SessionId,
                         BlockingSessionId = b.BlockingSessionId,
+                        QueryText = b.QueryText ?? "",
                         QueryTextPreview = b.QueryText ?? "",
                         WaitTimeMs = b.WaitTimeMs,
                         WaitType = b.WaitType ?? "",
-                        IsLeadBlocker = b.IsLeadBlocker
+                        IsLeadBlocker = b.IsLeadBlocker,
+                        ExecutionPlan = b.ExecutionPlan
                     }).ToList()
                     : new List<BlockingSnapshot>()
             }).ToListAsync();
@@ -246,7 +266,31 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         }
     }
 
-    public async Task<List<QuerySnapshot>> GetQueryHistoryAsync(int rangeSeconds, string serverName, string databaseName)
+    public async Task<string?> GetExecutionPlanAsync(string connectionId, string queryHash)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
+
+        try
+        {
+            // Find the most recent execution plan for this query hash
+            var plan = await context.QueryHistory
+                .AsNoTracking()
+                .Where(q => q.QueryHash == queryHash && q.Snapshot.ConnectionId == connectionId)
+                .OrderByDescending(q => q.LastExecutionTime)
+                .Select(q => q.ExecutionPlan)
+                .FirstOrDefaultAsync();
+
+            return plan;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load execution plan via EF.");
+            return null;
+        }
+    }
+
+    public async Task<List<QuerySnapshot>> GetQueryHistoryAsync(int rangeSeconds, string connectionId)
     {
          using var scope = _scopeFactory.CreateScope();
          var context = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
@@ -259,12 +303,12 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
              // Avoids fetching BlockingHistory or full MetricSnapshot objects
              var queries = await context.QueryHistory
                 .AsNoTracking()
-                .Where(q => q.Snapshot.ServerName == (serverName ?? "") 
-                         && q.Snapshot.DatabaseName == (databaseName ?? "")
+                .Where(q => q.Snapshot.ConnectionId == (connectionId ?? "") 
                          && q.Snapshot.Timestamp >= cutoff)
                 .Select(q => new QuerySnapshot
                 {
                      QueryHash = q.QueryHash ?? "",
+                     QueryText = q.QueryText ?? "",
                      QueryTextPreview = q.QueryText ?? "",
                      DatabaseName = q.DatabaseName,
                      AvgCpuTimeMs = q.AvgCpuTimeMs,
@@ -273,7 +317,8 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
                      LastExecutionTime = q.LastExecutionTime ?? default,
                      AvgLogicalReads = q.AvgLogicalReads,
                      AvgLogicalWrites = q.AvgLogicalWrites,
-                     AvgElapsedTimeMs = q.AvgElapsedTimeMs
+                     AvgElapsedTimeMs = q.AvgElapsedTimeMs,
+                     ExecutionPlan = null // Optimization: Don't load plan for history summary (lazy load via API)
                 })
                 .ToListAsync();
 
@@ -291,6 +336,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         return new MetricDataPoint
         {
             Timestamp = e.Timestamp,
+            ConnectionId = e.ConnectionId ?? "",
             ServerName = e.ServerName,
             DatabaseName = e.DatabaseName,
             CpuPercent = e.CpuPercent,
@@ -301,6 +347,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
             TopQueries = e.TopQueries.Select(q => new QuerySnapshot
             {
                 QueryHash = q.QueryHash ?? "",
+                QueryText = q.QueryText ?? "",
                 QueryTextPreview = q.QueryText ?? "",
                 DatabaseName = q.DatabaseName,
                 AvgCpuTimeMs = q.AvgCpuTimeMs,
@@ -314,6 +361,7 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
             {
                 SessionId = b.SessionId,
                 BlockingSessionId = b.BlockingSessionId,
+                QueryText = b.QueryText ?? "",
                 QueryTextPreview = b.QueryText ?? "",
                 WaitTimeMs = b.WaitTimeMs,
                 WaitType = b.WaitType ?? "",
@@ -396,5 +444,13 @@ public sealed class SqlPersistenceService : IMetricsPersistenceService
         {
             _logger.LogWarning(ex, "Could not inspect pending migrations while auto-migrations are disabled");
         }
+    }
+    
+    /// <summary>
+    /// Disposes the database initialization lock.
+    /// </summary>
+    public void Dispose()
+    {
+        _dbInitLock.Dispose();
     }
 }

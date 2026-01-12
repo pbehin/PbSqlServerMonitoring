@@ -147,7 +147,7 @@ class ChartManager {
         this.connectionsChart.data.labels = labels;
         this.connectionsChart.data.datasets[0].data = data.map(d => d.connections);
         this.connectionsChart.data.datasets[1].data = data.map(d => d.blocked);
-        this.connectionsChart.update('none');
+        this.connectionsChart.update();
     }
 
     /**
@@ -158,7 +158,7 @@ class ChartManager {
 
         this.memoryChart.data.labels = labels;
         this.memoryChart.data.datasets[0].data = data.map(d => d.memory);
-        this.memoryChart.update('none');
+        this.memoryChart.update();
     }
 
     /**

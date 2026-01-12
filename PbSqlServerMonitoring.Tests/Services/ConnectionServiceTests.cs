@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -14,6 +15,7 @@ public class ConnectionServiceTests
     private readonly Mock<IDataProtectionProvider> _mockDataProtectionProvider;
     private readonly Mock<IDataProtector> _mockDataProtector;
     private readonly Mock<IConfiguration> _mockConfiguration;
+    private readonly Mock<IWebHostEnvironment> _mockEnvironment;
     private readonly Mock<ILogger<ConnectionService>> _mockLogger;
 
     public ConnectionServiceTests()
@@ -21,6 +23,7 @@ public class ConnectionServiceTests
         _mockDataProtectionProvider = new Mock<IDataProtectionProvider>();
         _mockDataProtector = new Mock<IDataProtector>();
         _mockConfiguration = new Mock<IConfiguration>();
+        _mockEnvironment = new Mock<IWebHostEnvironment>();
         _mockLogger = new Mock<ILogger<ConnectionService>>();
 
         _mockDataProtectionProvider
@@ -31,6 +34,11 @@ public class ConnectionServiceTests
         _mockConfiguration
             .Setup(c => c.GetSection(It.IsAny<string>()))
             .Returns(new Mock<IConfigurationSection>().Object);
+        
+        // Default to development environment for tests
+        _mockEnvironment
+            .Setup(e => e.EnvironmentName)
+            .Returns("Development");
     }
 
     private ConnectionService CreateService()
@@ -38,6 +46,7 @@ public class ConnectionServiceTests
         return new ConnectionService(
             _mockDataProtectionProvider.Object,
             _mockConfiguration.Object,
+            _mockEnvironment.Object,
             _mockLogger.Object);
     }
 

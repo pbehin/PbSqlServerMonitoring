@@ -34,7 +34,7 @@ public sealed class MissingIndexService : BaseMonitoringService
             ON mid.index_handle = mig.index_handle
         INNER JOIN sys.dm_db_missing_index_group_stats migs WITH (NOLOCK)
             ON mig.index_group_handle = migs.group_handle
-        WHERE mid.database_id = DB_ID()
+        WHERE mid.database_id > 4  -- Exclude system databases (master, tempdb, model, msdb)
         ORDER BY ImprovementMeasure DESC";
     
     #endregion
@@ -56,12 +56,13 @@ public sealed class MissingIndexService : BaseMonitoringService
     /// Gets missing index recommendations sorted by improvement score.
     /// </summary>
     /// <param name="topN">Number of results (max 100)</param>
-    public Task<List<MissingIndex>> GetMissingIndexesAsync(int topN = 50)
+    public Task<List<MissingIndex>> GetMissingIndexesAsync(int topN = 50, string? connectionString = null)
     {
         return ExecuteMonitoringQueryAsync(
             MissingIndexQuery,
             MapMissingIndex,
-            cmd => cmd.Parameters.AddWithValue("@TopN", Math.Clamp(topN, 1, MetricsConstants.MaxTopN)));
+            cmd => cmd.Parameters.AddWithValue("@TopN", Math.Clamp(topN, 1, MetricsConstants.MaxTopN)),
+            connectionString: connectionString);
     }
     
     #endregion
@@ -128,12 +129,18 @@ public sealed class MissingIndexService : BaseMonitoringService
     }
 
     /// <summary>
-    /// Generates a short hash for unique index naming.
+    /// Generates a deterministic short hash for unique index naming.
+    /// Note: String.GetHashCode() is NOT deterministic across runs, so we use a simple DJB2 hash.
     /// </summary>
     private static string GenerateShortHash(string input)
     {
-        var hash = input.GetHashCode();
-        return Math.Abs(hash).ToString("X8")[..6];
+        // DJB2 hash algorithm - deterministic and consistent
+        uint hash = 5381;
+        foreach (char c in input)
+        {
+            hash = ((hash << 5) + hash) + c; // hash * 33 + c
+        }
+        return hash.ToString("X8")[..6];
     }
     
     #endregion

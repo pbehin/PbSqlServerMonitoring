@@ -8,9 +8,7 @@
     <meta name="description" content="Real-time SQL Server performance monitoring dashboard">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"
-        integrity="sha384-nwKAxByfZyD1zvWrn2IXT1kvtNLeBBuLSDeRvzRaYl38MUQP7i4iqnIf/FwK3/R5"
-        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
@@ -27,55 +25,70 @@
                 </div>
             </div>
             <ul class="nav-menu">
-                <li class="nav-item active" data-section="dashboard">
+                <li class="nav-item" data-section="setup">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4zM4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4zm0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4z" />
+                    </svg>
+                    <span>Setup</span>
+                </li>
+                <li class="nav-item requires-connection" data-section="dashboard" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
                     </svg>
                     <span>Dashboard</span>
                 </li>
-                <li class="nav-item" data-section="running">
+                <li class="nav-item requires-connection" data-section="running" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path
                             d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
                     </svg>
                     <span>Running Queries</span>
                 </li>
-                <li class="nav-item" data-section="queries">
+                <li class="nav-item requires-connection" data-section="queries" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path
                             d="M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z" />
                     </svg>
-                    <span>Query Performance</span>
+                    <span>Queries Performance</span>
                 </li>
-                <li class="nav-item" data-section="indexes">
+                <li class="nav-item requires-connection" data-section="indexes" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z" />
                     </svg>
                     <span>Missing Indexes</span>
                 </li>
-                <li class="nav-item" data-section="blocking">
+                <li class="nav-item requires-connection" data-section="blocking" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path
                             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" />
                     </svg>
                     <span>Blocking Sessions</span>
                 </li>
-                <li class="nav-item" data-section="locks">
+                <li class="nav-item requires-connection" data-section="locks" style="display: none;">
                     <svg viewBox="0 0 24 24" fill="currentColor">
                         <path
                             d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
                     </svg>
                     <span>Lock Analysis</span>
                 </li>
-                <li class="nav-item" data-section="settings">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                            d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
-                    </svg>
-                    <span>Settings</span>
-                </li>
             </ul>
             <div class="sidebar-footer">
+                <div class="user-profile" id="userProfile"
+                    style="margin-bottom: 10px; padding: 10px; border-top: 1px solid rgba(255,255,255,0.1); display: none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span id="userNameDisplay"
+                            style="font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px;">User</span>
+                        <button id="btnLogout"
+                            style="background: none; border: none; color: var(--text-secondary); cursor: pointer;"
+                            title="Logout">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                <path
+                                    d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
                 <div class="connection-status" id="connectionStatus">
                     <span class="status-dot"></span>
                     <span class="status-text">Checking...</span>
@@ -88,10 +101,17 @@
             <!-- Header -->
             <header class="header">
                 <div class="header-title">
-                    <h1 id="pageTitle">Dashboard</h1>
-                    <p id="pageSubtitle">Real-time SQL Server performance monitoring</p>
+                    <h1 id="pageTitle">Connection Setup</h1>
+                    <p id="pageSubtitle">Manage SQL Server connections</p>
                 </div>
                 <div class="header-actions">
+                    <button class="btn btn-outline requires-connection" id="changeConnectionBtn" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4zM4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4zm0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4z" />
+                        </svg>
+                        Change Server
+                    </button>
                     <button class="btn btn-secondary" id="refreshBtn">
                         <svg viewBox="0 0 24 24" fill="currentColor">
                             <path
@@ -104,21 +124,7 @@
             </header>
 
             <!-- Dashboard Section -->
-            <section id="dashboard" class="content-section active">
-                <!-- Connection Required Banner -->
-                <div id="connectionBanner" class="connection-banner" style="display:none;">
-                    <div class="banner-content">
-                        <svg viewBox="0 0 24 24" fill="currentColor" class="banner-icon">
-                            <path
-                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                        </svg>
-                        <div class="banner-text">
-                            <strong>No SQL Server Connection</strong>
-                            <span>Configure a connection to start monitoring your server.</span>
-                        </div>
-                        <a href="#" class="btn btn-primary btn-banner" data-nav="settings">Configure Connection</a>
-                    </div>
-                </div>
+            <section id="dashboard" class="content-section">
 
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -339,7 +345,7 @@
                 </div>
             </section>
 
-            <!-- Query Performance Section -->
+            <!-- Queries Performance Section -->
             <section id="queries" class="content-section">
                 <div class="section-tabs">
                     <button class="tab-btn active" data-tab="cpu">Top CPU</button>
@@ -537,66 +543,35 @@
                 </div>
             </section>
 
-            <!-- Settings Section -->
-            <section id="settings" class="content-section">
-                <div class="card settings-card">
+            <!-- Setup Section - Multi-Connection Management -->
+            <section id="setup" class="content-section">
+                <div class="card full-width">
                     <div class="card-header">
-                        <h3>Connection Settings</h3>
+                        <h3>SQL Server Connections</h3>
+                        <div class="header-badges">
+                            <span class="badge info" id="connectionLimitBadge">0 / 5 connections</span>
+                            <button class="btn btn-primary btn-sm" id="addConnectionBtn">
+                                <svg viewBox="0 0 24 24" fill="currentColor"
+                                    style="width: 16px; height: 16px; margin-right: 4px;">
+                                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                                </svg>
+                                Add Connection
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <form id="connectionForm" class="settings-form">
-                            <div class="form-group">
-                                <label for="serverInput">Server Name / IP</label>
-                                <input type="text" id="serverInput" placeholder="localhost\SQLEXPRESS or 192.168.1.1"
-                                    required>
-                                <span class="form-hint">e.g., localhost, server\instance, or IP address</span>
-                            </div>
-                            <div class="form-group">
-                                <label for="databaseInput">Database</label>
-                                <input type="text" id="databaseInput" value="master" placeholder="master">
-                                <span class="form-hint">Default: master (for server-wide monitoring)</span>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="windowsAuthCheck">
-                                    <span>Use Windows Authentication</span>
-                                </label>
-                            </div>
-                            <div id="sqlAuthFields">
-                                <div class="form-group">
-                                    <label for="usernameInput">Username</label>
-                                    <input type="text" id="usernameInput" placeholder="sa">
-                                </div>
-                                <div class="form-group">
-                                    <label for="passwordInput">Password</label>
-                                    <input type="password" id="passwordInput" placeholder="Password">
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="trustCertCheck" checked>
-                                    <span>Trust Server Certificate</span>
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label for="timeoutInput">Connection Timeout (seconds)</label>
-                                <input type="number" id="timeoutInput" value="30" min="5" max="120">
-                            </div>
-                            <div class="form-actions">
-                                <button type="button" class="btn btn-secondary" id="testConnectionBtn">
-                                    <span class="btn-text">Test Connection</span>
-                                    <span class="loading" style="display:none;"></span>
-                                </button>
-                                <button type="submit" class="btn btn-primary" id="saveConnectionBtn">
-                                    <span class="btn-text">Save & Connect</span>
-                                    <span class="loading" style="display:none;"></span>
-                                </button>
-                                <button type="button" class="btn btn-danger" id="clearConnectionBtn">
-                                    <span class="btn-text">Clear</span>
-                                </button>
-                            </div>
-                            <div id="connectionResult" class="connection-result" style="display:none;"></div>
-                        </form>
+                        <div id="connectionsGrid" class="connections-grid">
+                            <!-- Connections will be rendered here -->
+                        </div>
+                        <div id="noConnectionsMessage" class="empty-state" style="display: none;">
+                            <svg viewBox="0 0 24 24" fill="currentColor"
+                                style="width: 64px; height: 64px; opacity: 0.3;">
+                                <path
+                                    d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4zM4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4zm0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4z" />
+                            </svg>
+                            <p>No SQL Server connections configured.</p>
+                            <p>Click "Add Connection" to start monitoring your servers.</p>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -606,15 +581,31 @@
     <!-- Query Detail Modal -->
     <div class="modal" id="queryModal">
         <div class="modal-overlay"></div>
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 1000px;">
             <div class="modal-header">
                 <h3>Query Details</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
-                <pre id="queryDetail"></pre>
+                <div class="query-section">
+                    <h4
+                        style="margin: 0 0 0.5rem 0; color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase;">
+                        Query Text</h4>
+                    <pre id="queryDetail"></pre>
+                </div>
+                <div id="executionPlanSection" class="execution-plan-section" style="display: none; margin-top: 1rem;">
+                    <h4
+                        style="margin: 0 0 0.5rem 0; color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase;">
+                        Execution Plan</h4>
+                    <div id="executionPlanContainer" style="max-height: 300px; overflow: auto;">
+                        <pre id="executionPlanDetail" style="font-size: 0.7rem; white-space: pre-wrap;"></pre>
+                    </div>
+                </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer" style="gap: 0.5rem;">
+                <button class="btn btn-secondary" id="viewExecutionPlan" style="display: none;">View Execution
+                    Plan</button>
+                <button class="btn btn-primary" id="saveExecutionPlan" style="display: none;">Save Plan</button>
                 <button class="btn btn-secondary" id="copyQuery">Copy Query</button>
             </div>
         </div>
@@ -649,13 +640,269 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         AUTH MODAL - Premium Glassmorphism Design
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="auth-backdrop" id="authModal">
+        <div class="auth-container">
+            <!-- Animated Background Orbs -->
+            <div class="auth-bg-orbs">
+                <div class="orb orb-1"></div>
+                <div class="orb orb-2"></div>
+                <div class="orb orb-3"></div>
+            </div>
+
+            <!-- Glass Card -->
+            <div class="auth-card">
+                <!-- Logo & Branding -->
+                <div class="auth-brand">
+                    <div class="auth-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                        </svg>
+                    </div>
+                    <h1 class="auth-title" id="authTitle">Welcome Back</h1>
+                    <p class="auth-subtitle" id="authSubtitle">Sign in to monitor your SQL servers</p>
+                </div>
+
+                <!-- Tab Switcher -->
+                <div class="auth-tabs-wrapper">
+                    <button class="auth-tab active" id="tabLogin" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M13.8 12H3" />
+                        </svg>
+                        Sign In
+                    </button>
+                    <button class="auth-tab" id="tabRegister" type="button">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                            <circle cx="8.5" cy="7" r="4" />
+                            <line x1="20" y1="8" x2="20" y2="14" />
+                            <line x1="23" y1="11" x2="17" y2="11" />
+                        </svg>
+                        Register
+                    </button>
+                </div>
+
+                <!-- Form - action/method help browsers detect registration forms -->
+                <form id="authForm" class="auth-form" action="/api/auth/login" method="post" autocomplete="on">
+                    <!-- Email (must come first for password managers) -->
+                    <div class="auth-field">
+                        <div class="field-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="2" y="4" width="20" height="16" rx="2" />
+                                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                            </svg>
+                        </div>
+                        <input type="email" id="authEmail" name="username" class="auth-input" placeholder=" " required
+                            autocomplete="username">
+                        <label for="authEmail" class="auth-label">Email Address</label>
+                    </div>
+
+                    <!-- Password -->
+                    <div class="auth-field">
+                        <div class="field-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                            </svg>
+                        </div>
+                        <input type="password" id="authPassword" name="password" class="auth-input" placeholder=" "
+                            required autocomplete="current-password">
+                        <label for="authPassword" class="auth-label">Password</label>
+                    </div>
+
+                    <!-- Confirm Password (Always in DOM for password managers, but hidden in login mode) -->
+                    <div class="auth-field hidden-field" id="groupConfirmPassword">
+                        <div class="field-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                            </svg>
+                        </div>
+                        <input type="password" id="authPasswordConfirmVisible" name="password_confirm"
+                            class="auth-input" placeholder=" " autocomplete="new-password">
+                        <label for="authPasswordConfirmVisible" class="auth-label">Confirm Password</label>
+                    </div>
+
+                    <!-- Full Name (Register only) -->
+                    <div class="auth-field hidden-field" id="groupFullName">
+                        <div class="field-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                <circle cx="12" cy="7" r="4" />
+                            </svg>
+                        </div>
+                        <input type="text" id="authName" name="name" class="auth-input" placeholder=" "
+                            autocomplete="name">
+                        <label for="authName" class="auth-label">Full Name (Optional)</label>
+                    </div>
+
+                    <!-- Error Message -->
+                    <div id="authError" class="auth-error"></div>
+
+                    <!-- Forgot Password Link (Login only) -->
+                    <div id="forgotPasswordContainer" style="text-align: right; margin: -8px 0 16px 0; display: none;">
+                        <a href="#" id="btnForgotPassword"
+                            style="font-size: 13px; color: #6366f1; text-decoration: none; cursor: pointer; transition: color 0.2s; display: inline-block;"
+                            onmouseover="this.style.color='#818cf8'" onmouseout="this.style.color='#6366f1'">
+                            Forgot password?
+                        </a>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" class="auth-btn-submit" id="btnAuthAction">
+                        <span class="btn-text">Sign In</span>
+                        <span class="btn-loader"></span>
+                        <svg class="btn-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                            <polyline points="12 5 19 12 12 19" />
+                        </svg>
+                    </button>
+                </form>
+
+                <!-- Forgot Password Form (shown inline when activated) -->
+                <div id="forgotPasswordFormContainer" class="auth-form" style="display: none;">
+                    <div style="margin-bottom: 20px;">
+                        <p style="color: #9ca3af; font-size: 14px; line-height: 1.5; margin-bottom: 20px;">
+                            Enter your email address and we'll send you a link to reset your password.
+                        </p>
+                        <div class="auth-field">
+                            <div class="field-icon">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                                </svg>
+                            </div>
+                            <input type="email" id="forgotPasswordEmail" class="auth-input" placeholder=" " required
+                                autocomplete="email">
+                            <label for="forgotPasswordEmail" class="auth-label">Email Address</label>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button type="button" id="btnCancelForgotPassword" class="auth-btn-submit"
+                            style="background: rgba(59, 130, 246, 0.1); color: #9ca3af; flex: 1;">
+                            <span class="btn-text">Back to Login</span>
+                        </button>
+                        <button type="button" id="btnSubmitForgotPassword" class="auth-btn-submit" style="flex: 1;">
+                            <span class="btn-text">Send Reset Link</span>
+                            <span class="btn-loader"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="auth-divider">
+                    <span>or continue with</span>
+                </div>
+
+                <!-- Social Login -->
+                <div class="auth-social">
+                    <a href="/api/auth/login-Google" class="social-btn">
+                        <svg width="20" height="20" viewBox="0 0 24 24">
+                            <path fill="#4285F4"
+                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                            <path fill="#34A853"
+                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                            <path fill="#FBBC05"
+                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                            <path fill="#EA4335"
+                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                        </svg>
+                        <span>Google</span>
+                    </a>
+                </div>
+
+                <!-- Footer -->
+                <p class="auth-footer">
+                    Secured by <span class="highlight">256-bit encryption</span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ADD CONNECTION MODAL
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="modal" id="addConnectionModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add SQL Server Connection</h3>
+                <button class="modal-close" id="closeAddConnectionModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="addConnectionForm" class="settings-form">
+                    <div class="form-group">
+                        <label for="newConnectionName">Display Name</label>
+                        <input type="text" id="newConnectionName" placeholder="Production Server">
+                        <span class="form-hint">Optional friendly name for this connection</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="newServerInput">Server Name / IP</label>
+                        <input type="text" id="newServerInput" placeholder="localhost\SQLEXPRESS or 192.168.1.1"
+                            required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newDatabaseInput">Database</label>
+                        <input type="text" id="newDatabaseInput" value="master" placeholder="master">
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="newWindowsAuthCheck">
+                            <span>Use Windows Authentication</span>
+                        </label>
+                    </div>
+                    <div id="newSqlAuthFields">
+                        <div class="form-group">
+                            <label for="newUsernameInput">Username</label>
+                            <input type="text" id="newUsernameInput" placeholder="sa">
+                        </div>
+                        <div class="form-group">
+                            <label for="newPasswordInput">Password</label>
+                            <input type="password" id="newPasswordInput" placeholder="Password">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="newTrustCertCheck" checked>
+                            <span>Trust Server Certificate</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="newTimeoutInput">Connection Timeout (seconds)</label>
+                        <input type="number" id="newTimeoutInput" value="30" min="5" max="120">
+                    </div>
+                    <div id="addConnectionResult" class="connection-result" style="display:none;"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelAddConnection">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveNewConnection">
+                    <span class="btn-text">Add & Test Connection</span>
+                    <span class="loading" style="display:none;"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript Modules -->
-    <script src="modules/utils.js"></script>
-    <script src="modules/api-client.js"></script>
-    <script src="modules/chart-manager.js"></script>
-    <script src="modules/table-manager.js"></script>
-    <script src="modules/connection-manager.js"></script>
-    <script src="app.js"></script>
+    <script src="modules/utils.js?v=4"></script>
+    <script src="modules/api-client.js?v=4"></script>
+    <script src="modules/chart-manager.js?v=4"></script>
+    <script src="modules/table-manager.js?v=4"></script>
+    <script src="modules/connection-manager.js?v=4"></script>
+    <script src="modules/multi-connection-manager.js?v=4"></script>
+    <script src="modules/auth-manager.js?v=5"></script>
+    <script src="app.js?v=5"></script>
 </body>
 
 </html>

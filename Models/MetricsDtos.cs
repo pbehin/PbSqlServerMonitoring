@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace PbSqlServerMonitoring.Models;
 
 /// <summary>
@@ -6,7 +8,16 @@ namespace PbSqlServerMonitoring.Models;
 public sealed class MetricDataPoint
 {
     public DateTime Timestamp { get; set; }
+    [Required]
+    [MaxLength(64)]
+    public string ConnectionId { get; set; } = "";
+
+    [Required]
+    [MaxLength(128)]
     public string ServerName { get; set; } = "";
+    
+    [Required]
+    [MaxLength(128)]
     public string DatabaseName { get; set; } = "";
     public double CpuPercent { get; set; }
     public long MemoryMb { get; set; }
@@ -23,6 +34,9 @@ public sealed class MetricDataPoint
 public sealed class QuerySnapshot
 {
     public string QueryHash { get; set; } = "";
+    /// <summary>Full query text for detailed views</summary>
+    public string QueryText { get; set; } = "";
+    /// <summary>Truncated preview for table display</summary>
     public string QueryTextPreview { get; set; } = "";
     public double AvgCpuTimeMs { get; set; }
     public long ExecutionCount { get; set; }
@@ -31,6 +45,8 @@ public sealed class QuerySnapshot
     public double AvgElapsedTimeMs { get; set; }
     public string? DatabaseName { get; set; }
     public DateTime LastExecutionTime { get; set; }
+    /// <summary>XML execution plan (optional, can be large)</summary>
+    public string? ExecutionPlan { get; set; }
 }
 
 /// <summary>
@@ -40,10 +56,15 @@ public sealed class BlockingSnapshot
 {
     public int SessionId { get; set; }
     public int? BlockingSessionId { get; set; }
+    /// <summary>Full query text for detailed views</summary>
+    public string QueryText { get; set; } = "";
+    /// <summary>Truncated preview for table display</summary>
     public string QueryTextPreview { get; set; } = "";
     public long WaitTimeMs { get; set; }
     public string WaitType { get; set; } = "";
     public bool IsLeadBlocker { get; set; }
+    /// <summary>XML execution plan (optional, can be large)</summary>
+    public string? ExecutionPlan { get; set; }
 }
 
 /// <summary>

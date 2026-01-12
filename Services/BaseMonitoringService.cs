@@ -41,14 +41,17 @@ public abstract class BaseMonitoringService
         string sql,
         Func<SqlDataReader, T> mapper,
         Action<SqlCommand>? configureCommand = null,
-        int? timeoutSeconds = null)
+        int? timeoutSeconds = null,
+        string? connectionString = null)
     {
         ArgumentNullException.ThrowIfNullOrWhiteSpace(sql);
         ArgumentNullException.ThrowIfNull(mapper);
         
-        var connectionString = ConnectionService.GetConnectionString();
+        var connStr = !string.IsNullOrEmpty(connectionString) 
+            ? connectionString 
+            : ConnectionService.GetConnectionString();
         
-        if (string.IsNullOrEmpty(connectionString))
+        if (string.IsNullOrEmpty(connStr))
         {
             Logger.LogDebug("No connection string configured, returning empty result");
             return [];
@@ -58,7 +61,7 @@ public abstract class BaseMonitoringService
 
         try
         {
-            await using var connection = new SqlConnection(connectionString);
+            await using var connection = new SqlConnection(connStr);
             await connection.OpenAsync();
 
             // Set READ UNCOMMITTED to avoid locks on production data
@@ -97,20 +100,23 @@ public abstract class BaseMonitoringService
     /// </summary>
     protected async Task<T?> ExecuteScalarAsync<T>(
         string sql,
-        int? timeoutSeconds = null)
+        int? timeoutSeconds = null,
+        string? connectionString = null)
     {
         ArgumentNullException.ThrowIfNullOrWhiteSpace(sql);
         
-        var connectionString = ConnectionService.GetConnectionString();
+        var connStr = !string.IsNullOrEmpty(connectionString) 
+            ? connectionString 
+            : ConnectionService.GetConnectionString();
         
-        if (string.IsNullOrEmpty(connectionString))
+        if (string.IsNullOrEmpty(connStr))
         {
             return default;
         }
 
         try
         {
-            await using var connection = new SqlConnection(connectionString);
+            await using var connection = new SqlConnection(connStr);
             await connection.OpenAsync();
 
             await SetReadUncommittedAsync(connection);

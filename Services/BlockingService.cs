@@ -31,7 +31,8 @@ public sealed class BlockingService : BaseMonitoringService
                 r.logical_reads,
                 s.memory_usage * 8 AS memory_usage_kb,
                 r.start_time,
-                st.text AS query_text
+                st.text AS query_text,
+                r.plan_handle
             FROM sys.dm_exec_requests r WITH (NOLOCK)
             INNER JOIN sys.dm_exec_sessions s WITH (NOLOCK) 
                 ON r.session_id = s.session_id
@@ -69,8 +70,10 @@ public sealed class BlockingService : BaseMonitoringService
                 SELECT COUNT(*) 
                 FROM sys.dm_exec_requests WITH (NOLOCK) 
                 WHERE blocking_session_id = bt.session_id
-            ) AS blocked_count
+            ) AS blocked_count,
+            CONVERT(NVARCHAR(MAX), qp.query_plan) AS execution_plan
         FROM BlockingTree bt
+        OUTER APPLY sys.dm_exec_query_plan(bt.plan_handle) qp
         ORDER BY is_lead_blocker DESC, blocked_count DESC";
 
     private const string CurrentLocksQuery = @"
@@ -119,21 +122,23 @@ public sealed class BlockingService : BaseMonitoringService
     /// <summary>
     /// Gets all currently blocking sessions.
     /// </summary>
-    public Task<List<BlockingSession>> GetBlockingSessionsAsync()
+    public Task<List<BlockingSession>> GetBlockingSessionsAsync(string? connectionString = null)
     {
         return ExecuteMonitoringQueryAsync(
             BlockingSessionsQuery,
-            MapBlockingSession);
+            MapBlockingSession,
+            connectionString: connectionString);
     }
 
     /// <summary>
     /// Gets current locks in the database.
     /// </summary>
-    public Task<List<LockInfo>> GetCurrentLocksAsync()
+    public Task<List<LockInfo>> GetCurrentLocksAsync(string? connectionString = null)
     {
         return ExecuteMonitoringQueryAsync(
             CurrentLocksQuery,
-            MapLockInfo);
+            MapLockInfo,
+            connectionString: connectionString);
     }
     
     #endregion
@@ -160,7 +165,8 @@ public sealed class BlockingService : BaseMonitoringService
             MemoryUsageKb = reader.GetInt32(13),
             StartTime = ReadNullableDateTime(reader, 14),
             IsLeadBlocker = reader.GetInt32(15) == 1,
-            BlockedCount = reader.GetInt32(16)
+            BlockedCount = reader.GetInt32(16),
+            ExecutionPlan = ReadString(reader, 17)
         };
     }
 

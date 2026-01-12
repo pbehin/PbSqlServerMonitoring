@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PbSqlServerMonitoring.Configuration;
+using PbSqlServerMonitoring.Extensions;
+using PbSqlServerMonitoring.Models;
 using PbSqlServerMonitoring.Services;
 
 namespace PbSqlServerMonitoring.Controllers;
@@ -70,12 +72,14 @@ public sealed class SettingsController : ControllerBase
         // Validate request
         if (!ModelState.IsValid)
         {
-            return BadRequest(new { success = false, message = "Invalid request" });
+            return BadRequest(ApiResponse.Error("Invalid request"));
         }
 
-        if (string.IsNullOrWhiteSpace(request.Server))
+        // Use centralized validation
+        var (serverValid, sanitizedServer, serverError) = InputValidationExtensions.ValidateServerName(request.Server);
+        if (!serverValid)
         {
-            return BadRequest(new { success = false, message = "Server name is required" });
+            return BadRequest(ApiResponse.Error(serverError!));
         }
 
         try
@@ -88,11 +92,7 @@ public sealed class SettingsController : ControllerBase
 
             if (!testResult.Success)
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = testResult.Message
-                });
+                return BadRequest(ApiResponse.Error(testResult.Message));
             }
 
             // Save the connection string (encrypted)
@@ -109,12 +109,12 @@ public sealed class SettingsController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            return BadRequest(new { success = false, message = ex.Message });
+            return BadRequest(ApiResponse.Error(ex.Message));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to update connection");
-            return StatusCode(500, new { success = false, message = "An error occurred" });
+            return StatusCode(500, ApiResponse.Error("An error occurred"));
         }
     }
 
@@ -124,10 +124,11 @@ public sealed class SettingsController : ControllerBase
     [HttpPost("connection/test")]
     public async Task<IActionResult> TestConnection([FromBody] ConnectionRequest request)
     {
-        // Validate request
-        if (string.IsNullOrWhiteSpace(request.Server))
+        // Use centralized validation
+        var (serverValid, _, serverError) = InputValidationExtensions.ValidateServerName(request.Server);
+        if (!serverValid)
         {
-            return Ok(new { success = false, message = "Server name is required" });
+            return Ok(ApiResponse.Error(serverError!));
         }
 
         try

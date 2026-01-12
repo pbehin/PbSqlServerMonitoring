@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using PbSqlServerMonitoring.Configuration;
 using PbSqlServerMonitoring.Models;
 
@@ -6,11 +7,15 @@ namespace PbSqlServerMonitoring.Extensions;
 /// <summary>
 /// Extension methods for pagination operations.
 /// Reduces duplicated pagination logic across controllers.
+/// Provides both IEnumerable (in-memory) and IQueryable (database) variants.
 /// </summary>
 public static class PaginationExtensions
 {
+    #region IEnumerable Pagination (In-Memory)
+    
     /// <summary>
     /// Converts an enumerable to a paged result with pagination metadata.
+    /// WARNING: This loads all items into memory first. Use IQueryable overload for large datasets.
     /// </summary>
     /// <typeparam name="T">The type of items in the collection</typeparam>
     /// <param name="source">The source enumerable</param>
@@ -38,14 +43,8 @@ public static class PaginationExtensions
     
     /// <summary>
     /// Converts an enumerable to a paged result with type projection.
+    /// WARNING: This loads all items into memory first. Use IQueryable overload for large datasets.
     /// </summary>
-    /// <typeparam name="TSource">The source type</typeparam>
-    /// <typeparam name="TResult">The result type</typeparam>
-    /// <param name="source">The source enumerable</param>
-    /// <param name="page">The page number (1-based)</param>
-    /// <param name="pageSize">The number of items per page</param>
-    /// <param name="selector">The projection function</param>
-    /// <returns>A PagedResult containing the projected items and pagination metadata</returns>
     public static PagedResult<TResult> ToPagedResult<TSource, TResult>(
         this IEnumerable<TSource> source, 
         int page, 
@@ -69,6 +68,77 @@ public static class PaginationExtensions
             TotalPages = totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 0
         };
     }
+    
+    #endregion
+    
+    #region IQueryable Pagination (Database-Level)
+    
+    /// <summary>
+    /// Converts an IQueryable to a paged result, executing Skip/Take at the database level.
+    /// This is more efficient than the IEnumerable version for large datasets.
+    /// </summary>
+    /// <typeparam name="T">The type of items in the collection</typeparam>
+    /// <param name="source">The source queryable</param>
+    /// <param name="page">The page number (1-based)</param>
+    /// <param name="pageSize">The number of items per page</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>A PagedResult containing the items and pagination metadata</returns>
+    public static async Task<PagedResult<T>> ToPagedResultAsync<T>(
+        this IQueryable<T> source, 
+        int page, 
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        // Get total count at database level
+        var totalCount = await source.CountAsync(cancellationToken);
+        
+        // Get only the items for the current page
+        var pagedItems = await source
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+        
+        return new PagedResult<T>
+        {
+            Items = pagedItems,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 0
+        };
+    }
+    
+    /// <summary>
+    /// Converts an IQueryable to a paged result with type projection at the database level.
+    /// </summary>
+    public static async Task<PagedResult<TResult>> ToPagedResultAsync<TSource, TResult>(
+        this IQueryable<TSource> source, 
+        int page, 
+        int pageSize, 
+        System.Linq.Expressions.Expression<Func<TSource, TResult>> selector,
+        CancellationToken cancellationToken = default)
+    {
+        var totalCount = await source.CountAsync(cancellationToken);
+        
+        var pagedItems = await source
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(selector)
+            .ToListAsync(cancellationToken);
+        
+        return new PagedResult<TResult>
+        {
+            Items = pagedItems,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+            TotalPages = totalCount > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 0
+        };
+    }
+    
+    #endregion
+    
+    #region Validation Helpers
     
     /// <summary>
     /// Validates and clamps pagination parameters to safe ranges.
@@ -108,4 +178,7 @@ public static class PaginationExtensions
     {
         return Math.Clamp(rangeSeconds, MetricsConstants.MinRangeSeconds, MetricsConstants.MaxRangeSeconds);
     }
+    
+    #endregion
 }
+

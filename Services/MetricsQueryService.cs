@@ -28,27 +28,27 @@ public sealed class MetricsQueryService
     /// <summary>
     /// Gets metrics for the specified time range, merging buffer and persisted data.
     /// </summary>
-    public async Task<IEnumerable<MetricDataPoint>> GetMetricsAsync(int rangeSeconds)
+    /// <summary>
+    /// Gets metrics for the specified time range, merging buffer and persisted data.
+    /// </summary>
+    public async Task<IEnumerable<MetricDataPoint>> GetMetricsAsync(int rangeSeconds, string connectionId)
     {
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured) return Enumerable.Empty<MetricDataPoint>();
+        if (string.IsNullOrEmpty(connectionId)) return Enumerable.Empty<MetricDataPoint>();
 
-        var server = info.Server ?? "";
-        var db = info.Database ?? "";
         var cutoff = DateTime.UtcNow.AddSeconds(-rangeSeconds);
 
         // For very short ranges (1 minute or less), prefer in-memory data for speed
         if (rangeSeconds <= 60)
         {
-            var memData = _bufferService.GetRecentDataPoints(server, db, cutoff).ToList();
+            var memData = _bufferService.GetRecentDataPoints(connectionId, cutoff).ToList();
             if (memData.Count >= 3) return memData;
         }
 
         // For longer ranges, fetch from SQL storage
-        var history = await _persistenceService.GetMetricsAsync(rangeSeconds, server, db);
+        var history = await _persistenceService.GetMetricsAsync(rangeSeconds, connectionId);
         
         // Merge memory data for the most recent portion (covers any unsaved data)
-        var memRecent = _bufferService.GetRecentDataPoints(server, db).ToList();
+        var memRecent = _bufferService.GetRecentDataPoints(connectionId).ToList();
         
         if (memRecent.Any())
         {
@@ -61,7 +61,7 @@ public sealed class MetricsQueryService
         }
         
         // Also include pending save queue items
-        var pending = _bufferService.GetPendingDataPoints(server, db, cutoff).ToList();
+        var pending = _bufferService.GetPendingDataPoints(connectionId, cutoff).ToList();
         
         if (pending.Any())
         {
@@ -72,63 +72,56 @@ public sealed class MetricsQueryService
         return history.OrderBy(h => h.Timestamp);
     }
 
-    public async Task<PagedResult<MetricDataPoint>> GetMetricsPageAsync(int rangeSeconds, int page, int pageSize)
+    public async Task<PagedResult<MetricDataPoint>> GetMetricsPageAsync(int rangeSeconds, int page, int pageSize, string connectionId)
     {
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured)
+        if (string.IsNullOrEmpty(connectionId))
         {
             return EmptyPage(page, pageSize);
         }
 
-        var server = info.Server ?? "";
-        var db = info.Database ?? "";
         var cutoff = DateTime.UtcNow.AddSeconds(-rangeSeconds);
         var skip = (page - 1) * pageSize;
 
-        var dbPage = await _persistenceService.GetMetricsPagedAsync(rangeSeconds, server, db, skip, pageSize, blockedOnly: false, includeBlockingDetails: false);
+        var dbPage = await _persistenceService.GetMetricsPagedAsync(rangeSeconds, connectionId, skip, pageSize, blockedOnly: false, includeBlockingDetails: false);
 
-        var extras = CollectExtras(server, db, cutoff);
+        var extras = CollectExtras(connectionId, cutoff);
         return MergePageWithExtras(dbPage, extras, skip, pageSize, page);
     }
 
     /// <summary>
     /// Gets metrics for a custom date range.
     /// </summary>
-    public async Task<PagedResult<MetricDataPoint>> GetMetricsByDateRangePageAsync(DateTime fromUtc, DateTime toUtc, int page, int pageSize)
+    public async Task<PagedResult<MetricDataPoint>> GetMetricsByDateRangePageAsync(DateTime fromUtc, DateTime toUtc, int page, int pageSize, string connectionId)
     {
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured)
+        if (string.IsNullOrEmpty(connectionId))
         {
             return EmptyPage(page, pageSize);
         }
 
-        var server = info.Server ?? "";
-        var db = info.Database ?? "";
         var skip = (page - 1) * pageSize;
 
-        var dbPage = await _persistenceService.GetMetricsByDateRangePagedAsync(fromUtc, toUtc, server, db, skip, pageSize, blockedOnly: false, includeBlockingDetails: false);
+        var dbPage = await _persistenceService.GetMetricsByDateRangePagedAsync(fromUtc, toUtc, connectionId, skip, pageSize, blockedOnly: false, includeBlockingDetails: false);
 
-        var extras = CollectExtras(server, db, fromUtc);
+        var extras = CollectExtras(connectionId, fromUtc);
         return MergePageWithExtras(dbPage, extras.Where(e => e.Timestamp <= toUtc).ToList(), skip, pageSize, page);
     }
 
     /// <summary>
     /// Gets query history summary with aggregation.
     /// </summary>
-    public async Task<List<QueryPerformance>> GetQueryHistorySummaryAsync(double hours, string sortBy = "cpu")
+    public async Task<List<QueryPerformance>> GetQueryHistorySummaryAsync(double hours, string connectionId, string sortBy = "cpu")
     {
         var range = (int)(hours * 3600);
         
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured) return new List<QueryPerformance>();
+        if (string.IsNullOrEmpty(connectionId)) return new List<QueryPerformance>();
         
-        var queries = await _persistenceService.GetQueryHistoryAsync(range, info.Server ?? "", info.Database ?? "");
+        var queries = await _persistenceService.GetQueryHistoryAsync(range, connectionId);
         
         var cutoffUtc = DateTime.UtcNow.AddSeconds(-range);
         queries = queries.Where(q => q.LastExecutionTime >= cutoffUtc).ToList();
         
         // Also get recent in-memory data
-        var memRecent = _bufferService.GetRecentDataPoints(info.Server ?? "", info.Database ?? "")
+        var memRecent = _bufferService.GetRecentDataPoints(connectionId)
             .SelectMany(dp => dp.TopQueries)
             .Where(q => q.LastExecutionTime >= cutoffUtc)
             .ToList();
@@ -148,7 +141,7 @@ public sealed class MetricsQueryService
             result.Add(new QueryPerformance
             {
                 QueryHash = max.QueryHash,
-                QueryText = max.QueryTextPreview,
+                QueryText = string.IsNullOrEmpty(max.QueryText) ? max.QueryTextPreview : max.QueryText,
                 ExecutionCount = max.ExecutionCount,
                 AvgCpuTimeMs = max.AvgCpuTimeMs,
                 TotalCpuTimeMs = max.AvgCpuTimeMs * max.ExecutionCount,
@@ -159,7 +152,8 @@ public sealed class MetricsQueryService
                 AvgElapsedTimeMs = max.AvgElapsedTimeMs,
                 TotalElapsedTimeMs = max.AvgElapsedTimeMs * max.ExecutionCount,
                 LastExecutionTime = max.LastExecutionTime,
-                DatabaseName = max.DatabaseName ?? "Unknown"
+                DatabaseName = max.DatabaseName ?? "Unknown",
+                ExecutionPlan = null // Lazy load via separate API
             });
         }
         
@@ -176,12 +170,11 @@ public sealed class MetricsQueryService
     /// <summary>
     /// Gets the latest metric data point.
     /// </summary>
-    public MetricDataPoint? GetLatest()
+    public MetricDataPoint? GetLatest(string connectionId)
     {
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured) return null;
+        if (string.IsNullOrEmpty(connectionId)) return null;
 
-        return _bufferService.GetLatest(info.Server ?? "", info.Database ?? "");
+        return _bufferService.GetLatest(connectionId);
     }
 
     /// <summary>
@@ -192,32 +185,50 @@ public sealed class MetricsQueryService
         return _bufferService.GetBufferHealth();
     }
 
-    public async Task<PagedResult<MetricDataPoint>> GetBlockingHistoryPageAsync(int rangeSeconds, int page, int pageSize)
+    public async Task<PagedResult<MetricDataPoint>> GetBlockingHistoryPageAsync(int rangeSeconds, int page, int pageSize, string connectionId)
     {
-        var info = _connectionService.GetConnectionInfo();
-        if (!info.IsConfigured)
+        if (string.IsNullOrEmpty(connectionId))
         {
             return EmptyPage(page, pageSize);
         }
 
-        var server = info.Server ?? "";
-        var db = info.Database ?? "";
         var cutoff = DateTime.UtcNow.AddSeconds(-rangeSeconds);
         var skip = (page - 1) * pageSize;
 
-        var dbPage = await _persistenceService.GetMetricsPagedAsync(rangeSeconds, server, db, skip, pageSize, blockedOnly: true, includeBlockingDetails: true);
+        var dbPage = await _persistenceService.GetMetricsPagedAsync(rangeSeconds, connectionId, skip, pageSize, blockedOnly: true, includeBlockingDetails: true);
 
-        var extras = CollectExtras(server, db, cutoff)
+        var extras = CollectExtras(connectionId, cutoff)
             .Where(m => m.BlockedProcesses > 0 || m.BlockedQueries.Count > 0)
             .ToList();
 
         return MergePageWithExtras(dbPage, extras, skip, pageSize, page);
     }
 
-    private List<MetricDataPoint> CollectExtras(string server, string db, DateTime cutoff)
+    public async Task<string?> GetExecutionPlanAsync(string connectionId, string queryHash)
     {
-        var memRecent = _bufferService.GetRecentDataPoints(server, db, cutoff).ToList();
-        var pending = _bufferService.GetPendingDataPoints(server, db, cutoff).ToList();
+         if (string.IsNullOrEmpty(connectionId) || string.IsNullOrEmpty(queryHash)) return null;
+
+         // Check recent buffer first (optional optimization, but good for real-time feel)
+         var bufferPlan = _bufferService.GetRecentDataPoints(connectionId)
+             .SelectMany(p => p.TopQueries)
+             .Where(q => q.QueryHash == queryHash && !string.IsNullOrEmpty(q.ExecutionPlan))
+             .OrderByDescending(q => q.LastExecutionTime)
+             .Select(q => q.ExecutionPlan)
+             .FirstOrDefault();
+
+         if (!string.IsNullOrEmpty(bufferPlan))
+         {
+             return bufferPlan;
+         }
+         
+         // Fallback to persistence
+         return await _persistenceService.GetExecutionPlanAsync(connectionId, queryHash);
+    }
+
+    private List<MetricDataPoint> CollectExtras(string connectionId, DateTime cutoff)
+    {
+        var memRecent = _bufferService.GetRecentDataPoints(connectionId, cutoff).ToList();
+        var pending = _bufferService.GetPendingDataPoints(connectionId, cutoff).ToList();
 
         return memRecent
             .Concat(pending)

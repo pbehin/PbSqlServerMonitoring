@@ -1,9 +1,10 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using PbSqlServerMonitoring.Models;
 
 namespace PbSqlServerMonitoring.Data;
 
-public class MonitorDbContext : DbContext
+public class MonitorDbContext : IdentityDbContext<ApplicationUser>
 {
     public MonitorDbContext(DbContextOptions<MonitorDbContext> options)
         : base(options)
@@ -13,6 +14,8 @@ public class MonitorDbContext : DbContext
     public DbSet<MetricSnapshotEntity> MetricSnapshots { get; set; } = null!;
     public DbSet<QueryHistoryEntity> QueryHistory { get; set; } = null!;
     public DbSet<BlockingHistoryEntity> BlockingHistory { get; set; } = null!;
+    public DbSet<UserPreferenceEntity> UserPreferences { get; set; } = null!;
+    public DbSet<ServerConnection> ServerConnections { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,5 +78,24 @@ public class MonitorDbContext : DbContext
             .WithMany(s => s.BlockedQueries)
             .HasForeignKey(b => b.SnapshotId)
             .OnDelete(DeleteBehavior.Cascade);
+            
+        // ============================================================
+        // ServerConnection Indexes
+        // ============================================================
+        
+        // Index on UserId for multi-tenant queries
+        modelBuilder.Entity<ServerConnection>()
+            .HasIndex(c => c.UserId)
+            .HasDatabaseName("IX_ServerConnections_UserId");
+            
+        // Index on Status for filtering enabled/disabled connections
+        modelBuilder.Entity<ServerConnection>()
+            .HasIndex(c => c.Status)
+            .HasDatabaseName("IX_ServerConnections_Status");
+            
+        // Composite index for user + enabled connections
+        modelBuilder.Entity<ServerConnection>()
+            .HasIndex(c => new { c.UserId, c.IsEnabled })
+            .HasDatabaseName("IX_ServerConnections_UserId_IsEnabled");
     }
 }

@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PbSqlServerMonitoring.Extensions;
 using PbSqlServerMonitoring.Models;
 using PbSqlServerMonitoring.Services;
+using static PbSqlServerMonitoring.Extensions.InputValidationExtensions;
 
 namespace PbSqlServerMonitoring.Controllers;
 
@@ -14,11 +16,16 @@ namespace PbSqlServerMonitoring.Controllers;
 public sealed class RunningController : ControllerBase
 {
     private readonly RunningQueriesService _service;
+    private readonly MultiConnectionService _multiConnectionService;
     private readonly ILogger<RunningController> _logger;
 
-    public RunningController(RunningQueriesService service, ILogger<RunningController> logger)
+    public RunningController(
+        RunningQueriesService service, 
+        MultiConnectionService multiConnectionService,
+        ILogger<RunningController> logger)
     {
         _service = service;
+        _multiConnectionService = multiConnectionService;
         _logger = logger;
     }
 
@@ -27,15 +34,22 @@ public sealed class RunningController : ControllerBase
     /// </summary>
     [HttpGet("active")]
     public async Task<IActionResult> GetRunningQueries(
+        [FromHeader(Name = "X-Connection-Id")] string? connectionId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
         try
         {
+            var (isValid, sanitizedId, error) = ValidateConnectionId(connectionId);
+            if (!isValid) return BadRequest(ApiResponse.Error(error!));
+            
+            var connStr = _multiConnectionService.GetConnectionString(sanitizedId!);
+            if (string.IsNullOrEmpty(connStr)) return BadRequest(ApiResponse.Error("Connection not found"));
+
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 100);
             
-            var queries = await _service.GetRunningQueriesAsync();
+            var queries = await _service.GetRunningQueriesAsync(connStr);
             
             var totalCount = queries.Count;
             var pagedResults = queries
@@ -55,7 +69,7 @@ public sealed class RunningController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch running queries");
-            return StatusCode(500, new { error = "Unexpected error while fetching running queries" });
+            return StatusCode(500, ApiResponse.Error("Unexpected error while fetching running queries"));
         }
     }
 }

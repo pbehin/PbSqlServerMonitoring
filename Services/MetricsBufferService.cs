@@ -50,6 +50,10 @@ public sealed class MetricsBufferService
     private long _droppedPendingTotal;
     private DateTime? _lastDropUtc;
     
+    // Diagnostics
+    private long _lastCollectionTimeTicks; // Use Interlocked for atomic reads
+    private string? _lastError;
+    
     #endregion
 
     #region Constructor
@@ -84,12 +88,12 @@ public sealed class MetricsBufferService
     }
     
     /// <summary>
-    /// Gets recent data points for the specified server/database.
+    /// Gets recent data points for the specified connection.
     /// </summary>
-    public IEnumerable<MetricDataPoint> GetRecentDataPoints(string serverName, string databaseName, DateTime? cutoff = null)
+    public IEnumerable<MetricDataPoint> GetRecentDataPoints(string connectionId, DateTime? cutoff = null)
     {
         var query = _recentDataPoints
-            .Where(dp => dp.ServerName == serverName && dp.DatabaseName == databaseName);
+            .Where(dp => dp.ConnectionId == connectionId);
             
         if (cutoff.HasValue)
         {
@@ -100,12 +104,12 @@ public sealed class MetricsBufferService
     }
     
     /// <summary>
-    /// Gets the latest data point for the specified server/database.
+    /// Gets the latest data point for the specified connection.
     /// </summary>
-    public MetricDataPoint? GetLatest(string serverName, string databaseName)
+    public MetricDataPoint? GetLatest(string connectionId)
     {
         return _recentDataPoints
-            .Where(p => p.ServerName == serverName && p.DatabaseName == databaseName)
+            .Where(p => p.ConnectionId == connectionId)
             .OrderByDescending(p => p.Timestamp)
             .FirstOrDefault();
     }
@@ -135,12 +139,12 @@ public sealed class MetricsBufferService
     }
     
     /// <summary>
-    /// Gets pending data points for a specific server/database without removing them.
+    /// Gets pending data points for a specific connection without removing them.
     /// </summary>
-    public IEnumerable<MetricDataPoint> GetPendingDataPoints(string serverName, string databaseName, DateTime cutoff)
+    public IEnumerable<MetricDataPoint> GetPendingDataPoints(string connectionId, DateTime cutoff)
     {
         return _pendingSaveQueue
-            .Where(p => p.ServerName == serverName && p.DatabaseName == databaseName && p.Timestamp >= cutoff)
+            .Where(p => p.ConnectionId == connectionId && p.Timestamp >= cutoff)
             .ToList();
     }
     
@@ -169,6 +173,34 @@ public sealed class MetricsBufferService
     public bool ShouldThrottleCollection
         => _pendingSaveQueue.Count >= (int)(MaxPendingSaveQueue * PendingHighWatermarkRatio);
     
+    #region Diagnostics
+
+    public DateTime? LastCollectionTimeUtc 
+    {
+        get 
+        {
+            var ticks = Interlocked.Read(ref _lastCollectionTimeTicks);
+            return ticks > 0 ? new DateTime(ticks, DateTimeKind.Utc) : null;
+        }
+    }
+
+    public string? LastError => _lastError;
+
+    public void RecordCollectionResult(bool success, string? error = null)
+    {
+        Interlocked.Exchange(ref _lastCollectionTimeTicks, DateTime.UtcNow.Ticks);
+        if (!success && !string.IsNullOrEmpty(error))
+        {
+            _lastError = error;
+        }
+        else if (success)
+        {
+            _lastError = null;
+        }
+    }
+
+    #endregion
+
     /// <summary>
     /// Performs cleanup of old data points.
     /// </summary>

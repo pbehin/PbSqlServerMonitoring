@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PbSqlServerMonitoring.Extensions;
 using PbSqlServerMonitoring.Models;
 using PbSqlServerMonitoring.Services;
+using static PbSqlServerMonitoring.Extensions.InputValidationExtensions;
 
 namespace PbSqlServerMonitoring.Controllers;
 
@@ -11,14 +13,19 @@ namespace PbSqlServerMonitoring.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/[controller]")]
-public class LocksController : ControllerBase
+public sealed class LocksController : ControllerBase
 {
     private readonly BlockingService _blockingService;
+    private readonly MultiConnectionService _multiConnectionService;
     private readonly ILogger<LocksController> _logger;
 
-    public LocksController(BlockingService blockingService, ILogger<LocksController> logger)
+    public LocksController(
+        BlockingService blockingService, 
+        MultiConnectionService multiConnectionService,
+        ILogger<LocksController> logger)
     {
         _blockingService = blockingService;
+        _multiConnectionService = multiConnectionService;
         _logger = logger;
     }
 
@@ -27,15 +34,22 @@ public class LocksController : ControllerBase
     /// </summary>
     [HttpGet("current")]
     public async Task<IActionResult> GetCurrentLocks(
+        [FromHeader(Name = "X-Connection-Id")] string? connectionId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
         try
         {
+            var (isValid, sanitizedId, error) = ValidateConnectionId(connectionId);
+            if (!isValid) return BadRequest(ApiResponse.Error(error!));
+            
+            var connStr = _multiConnectionService.GetConnectionString(sanitizedId!);
+            if (string.IsNullOrEmpty(connStr)) return BadRequest(ApiResponse.Error("Connection not found"));
+
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 200);
             
-            var results = await _blockingService.GetCurrentLocksAsync();
+            var results = await _blockingService.GetCurrentLocksAsync(connStr);
             
             var totalCount = results.Count;
             var pagedResults = results
@@ -55,7 +69,7 @@ public class LocksController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to fetch current locks");
-            return StatusCode(500, new { error = "Unexpected error while fetching current locks" });
+            return StatusCode(500, ApiResponse.Error("Unexpected error while fetching current locks"));
         }
     }
 }

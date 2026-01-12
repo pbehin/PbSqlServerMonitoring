@@ -56,6 +56,9 @@ public sealed class QueryPerformance
     
     /// <summary>When the query plan was created</summary>
     public DateTime CreationTime { get; set; }
+    
+    /// <summary>XML execution plan for this query</summary>
+    public string? ExecutionPlan { get; set; }
 }
 
 // ============================================================
@@ -135,6 +138,9 @@ public sealed class BlockingSession
     
     /// <summary>Number of sessions this one is blocking</summary>
     public int BlockedCount { get; set; }
+    
+    /// <summary>XML execution plan for this query</summary>
+    public string? ExecutionPlan { get; set; }
 }
 
 /// <summary>

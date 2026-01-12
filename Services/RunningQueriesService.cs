@@ -67,11 +67,15 @@ public sealed class RunningQueriesService : BaseMonitoringService
     /// <summary>
     /// Gets all currently running queries.
     /// </summary>
-    public Task<List<RunningQuery>> GetRunningQueriesAsync()
+    /// <summary>
+    /// Gets all currently running queries.
+    /// </summary>
+    public Task<List<RunningQuery>> GetRunningQueriesAsync(string? connectionString = null)
     {
         return ExecuteMonitoringQueryAsync(
             RunningQueriesQuery,
-            MapRunningQuery);
+            MapRunningQuery,
+            connectionString: connectionString);
     }
     
     #endregion

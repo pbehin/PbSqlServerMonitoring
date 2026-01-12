@@ -4,6 +4,7 @@ using PbSqlServerMonitoring.Configuration;
 using PbSqlServerMonitoring.Extensions;
 using PbSqlServerMonitoring.Models;
 using PbSqlServerMonitoring.Services;
+using static PbSqlServerMonitoring.Extensions.InputValidationExtensions;
 
 namespace PbSqlServerMonitoring.Controllers;
 
@@ -28,17 +29,23 @@ public sealed class MetricsController : ControllerBase
     /// <param name="rangeSeconds">Time range in seconds (default: 60, max: 172800 = 2 days)</param>
     /// <param name="page">Page number (1-based, default: 1)</param>
     /// <param name="pageSize">Items per page (default: 100, max: 1000)</param>
+    /// <returns>Paginated metrics data</returns>
     [HttpGet("history")]
+    [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetHistory(
+        [FromHeader(Name = "X-Connection-Id")] string? connectionId,
         [FromQuery] int rangeSeconds = MetricsConstants.DefaultRangeSeconds,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = MetricsConstants.DefaultPageSize)
     {
+        var (isValid, sanitizedId, error) = ValidateConnectionId(connectionId);
+        if (!isValid) return BadRequest(ApiResponse.Error(error!));
+        
         // Validate parameters using extension methods
         rangeSeconds = PaginationExtensions.ValidateRangeSeconds(rangeSeconds);
         (page, pageSize) = PaginationExtensions.ValidatePagination(page, pageSize);
         
-        var pageResult = await _queryService.GetMetricsPageAsync(rangeSeconds, page, pageSize);
+        var pageResult = await _queryService.GetMetricsPageAsync(rangeSeconds, page, pageSize, sanitizedId!);
 
         return Ok(new PagedResult<object>
         {
@@ -65,20 +72,40 @@ public sealed class MetricsController : ControllerBase
     /// <param name="to">End datetime (ISO 8601 format)</param>
     /// <param name="page">Page number (1-based)</param>
     /// <param name="pageSize">Items per page</param>
+    /// <returns>Paginated metrics within the specified date range</returns>
     [HttpGet("history/range")]
+    [ProducesResponseType(typeof(PagedResult<object>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetHistoryByRange(
+        [FromHeader(Name = "X-Connection-Id")] string? connectionId,
         [FromQuery] DateTime from, 
         [FromQuery] DateTime to,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = MetricsConstants.DefaultPageSize)
     {
+        var (isValid, sanitizedId, error) = ValidateConnectionId(connectionId);
+        if (!isValid) return BadRequest(ApiResponse.Error(error!));
+        
         // Convert to UTC if not already
         var fromUtc = from.Kind == DateTimeKind.Utc ? from : from.ToUniversalTime();
         var toUtc = to.Kind == DateTimeKind.Utc ? to : to.ToUniversalTime();
         
+        // Validate date range
+        if (fromUtc > toUtc)
+        {
+            return BadRequest(ApiResponse.Error("Invalid date range: 'from' must be before or equal to 'to'"));
+        }
+        
+        // Validate maximum date range (7 days to prevent excessive data load)
+        var maxRangeDays = 7;
+        if ((toUtc - fromUtc).TotalDays > maxRangeDays)
+        {
+            return BadRequest(ApiResponse.Error($"Date range exceeds maximum of {maxRangeDays} days"));
+        }
+        
         (page, pageSize) = PaginationExtensions.ValidatePagination(page, pageSize);
         
-        var pageResult = await _queryService.GetMetricsByDateRangePageAsync(fromUtc, toUtc, page, pageSize);
+        var pageResult = await _queryService.GetMetricsByDateRangePageAsync(fromUtc, toUtc, page, pageSize, sanitizedId!);
 
         return Ok(new PagedResult<object>
         {
@@ -101,10 +128,15 @@ public sealed class MetricsController : ControllerBase
     /// <summary>
     /// Gets the latest metric data point.
     /// </summary>
+    /// <returns>The most recent metric snapshot</returns>
     [HttpGet("latest")]
-    public IActionResult GetLatest()
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult GetLatest([FromHeader(Name = "X-Connection-Id")] string? connectionId)
     {
-        var latest = _queryService.GetLatest();
+        var (isValid, sanitizedId, error) = ValidateConnectionId(connectionId);
+        if (!isValid) return BadRequest(ApiResponse.Error(error!));
+        
+        var latest = _queryService.GetLatest(sanitizedId!);
         
         if (latest == null)
         {
@@ -145,13 +177,14 @@ public sealed class MetricsController : ControllerBase
     /// </summary>
     [HttpGet("blocking-history")]
     public async Task<IActionResult> GetBlockingHistory(
+        [FromHeader(Name = "X-Connection-Id")] string connectionId,
         [FromQuery] int rangeSeconds = MetricsConstants.MaxRangeSeconds,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = MetricsConstants.DefaultPageSize)
     {
         (page, pageSize) = PaginationExtensions.ValidatePagination(page, pageSize);
         
-        var pageResult = await _queryService.GetBlockingHistoryPageAsync(rangeSeconds, page, pageSize);
+        var pageResult = await _queryService.GetBlockingHistoryPageAsync(rangeSeconds, page, pageSize, connectionId);
 
         return Ok(new PagedResult<object>
         {

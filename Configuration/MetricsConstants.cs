@@ -46,11 +46,14 @@ public static class MetricsConstants
     /// <summary>Maximum number of results to return</summary>
     public const int MaxTopN = 100;
     
-    /// <summary>Maximum number of characters for query text preview</summary>
-    public const int MaxQueryTextLength = 500;
+    /// <summary>Maximum number of characters for query text stored in database (10MB limit)</summary>
+    public const int MaxQueryTextLength = 10 * 1024 * 1024; // 10 MB
     
     /// <summary>Maximum number of characters for query text in memory</summary>
     public const int MaxQueryTextPreviewLength = 100;
+    
+    /// <summary>Maximum number of characters for execution plan (10MB limit)</summary>
+    public const int MaxExecutionPlanLength = 10 * 1024 * 1024; // 10 MB
     
     #endregion
     
@@ -120,11 +123,11 @@ public static class MetricsConstants
     
     #region Rate Limiting Constants
     
-    /// <summary>Maximum requests per minute per IP</summary>
+    /// <summary>Maximum requests per window per IP (increased for dashboard polling)</summary>
     public const int RateLimitPerMinute = 100;
     
-    /// <summary>Token bucket replenish period in seconds</summary>
-    public const int RateLimitWindowSeconds = 60;
+    /// <summary>Token bucket replenish period in seconds (shorter window for smoother experience)</summary>
+    public const int RateLimitWindowSeconds = 30;
     
     #endregion
 }

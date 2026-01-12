@@ -1,0 +1,24 @@
+{
+  "Connections": [
+    {
+      "Id": "81010b231fcf4e26",
+      "UserId": "cbed315b-6925-422c-b248-1f637bba355e",
+      "Name": "Lynx",
+      "Server": "lynx.dnscdn.se, 3341",
+      "Database": "master",
+      "UseWindowsAuth": false,
+      "Username": "peyman",
+      "TrustCertificate": true,
+      "Timeout": 30,
+      "IsEnabled": true,
+      "CreatedAt": "2026-01-15T13:06:44.9799875Z",
+      "LastSuccessfulConnection": "2026-01-15T13:08:25.4927231Z",
+      "Status": 1,
+      "LastError": null,
+      "RequiresReauthenticationSince": null
+    }
+  ],
+  "EncryptedConnectionStrings": {
+    "81010b231fcf4e26": "CfDJ8Ejhx070-CxMuH8JXPR1wXGVhyEPPTQZc9D76Cgx7QPJnrItd-tS6jPZ8ieVIXb6q08eDWWvOU9kBiSLBmrHrXtnXmFK0pLJWdYxTUERmwff03Us6IjhyCK1ZUadUDmphbf2rLiPzjBQZ2PoHxcU4uVQj8rIsEbUwVdEUc-dCFfIw9nrOhsZYZw2mBbC-uRAtSAsuHMGn9wh4Nf4oxt42EyodFyi1v9NrH5cpu8Q2eg1NnOnuHGKX2K5aNonOPb9nBX2P21394idP-y3feDs3THojcFqK9lYG9O9TMDDINzZgZOXp_5zCwr1PiLnX1WqYVdUoNTXbDzzOoVXZZF0l_mZJM9eUAGDqiTLZNzPYS3Un2EJu-pYtAP_0yUvnM6uTKP3Be6EZEvgWcEMAnVGPNLOxFufBvhKxPqlAzNiAECO44YakF7DWglWqa-tluldVuWdT6kdYEXoRrdVHMB0FyU"
+  }
+}
