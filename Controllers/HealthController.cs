@@ -15,16 +15,13 @@ namespace PbSqlServerMonitoring.Controllers;
 [Route("api/[controller]")]
 public sealed class HealthController : ControllerBase
 {
-    private readonly ServerHealthService _healthService;
-    private readonly MultiConnectionService _multiConnectionService;
+    private readonly IMultiConnectionService _multiConnectionService;
     private readonly ILogger<HealthController> _logger;
 
     public HealthController(
-        ServerHealthService healthService, 
-        MultiConnectionService multiConnectionService,
+        IMultiConnectionService multiConnectionService,
         ILogger<HealthController> logger)
     {
-        _healthService = healthService;
         _multiConnectionService = multiConnectionService;
         _logger = logger;
     }
@@ -46,16 +43,16 @@ public sealed class HealthController : ControllerBase
             return BadRequest(ApiResponse.Error(error!));
         }
 
-        var connectionString = _multiConnectionService.GetConnectionString(sanitizedId!);
-        if (string.IsNullOrEmpty(connectionString))
-        {
-            return BadRequest(ApiResponse.Error("Connection not found"));
-        }
-
         try
         {
-            var health = await _healthService.GetServerHealthAsync(connectionString);
-            return Ok(health);
+            var result = await _multiConnectionService.TestStoredConnectionAsync(sanitizedId!);
+
+            return Ok(new
+            {
+                IsConnected = result.Success,
+                ErrorMessage = result.Success ? null : result.Message,
+                Timestamp = DateTime.UtcNow
+            });
         }
         catch (Exception ex)
         {
@@ -63,7 +60,7 @@ public sealed class HealthController : ControllerBase
             return StatusCode(500, ApiResponse.Error("Unexpected error while retrieving server health"));
         }
     }
-    
+
     /// <summary>
     /// Liveness probe for container orchestration.
     /// Returns 200 if the application is running (even if SQL Server is unreachable).
@@ -74,13 +71,13 @@ public sealed class HealthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public IActionResult LivenessProbe()
     {
-        return Ok(new 
-        { 
+        return Ok(new
+        {
             status = "Healthy",
             timestamp = DateTime.UtcNow
         });
     }
-    
+
     /// <summary>
     /// Readiness probe for container orchestration.
     /// Returns 200 only if at least one SQL Server connection is configured and enabled.
@@ -97,51 +94,39 @@ public sealed class HealthController : ControllerBase
             var enabledConnections = _multiConnectionService.GetEnabledConnections().ToList();
             if (!enabledConnections.Any())
             {
-                return StatusCode(503, new 
-                { 
+                return StatusCode(503, new
+                {
                     status = "Unhealthy",
                     reason = "No SQL Server connection configured",
                     timestamp = DateTime.UtcNow
                 });
             }
-            
-            // Check the first enabled connection for health
+
             var firstConnection = enabledConnections.First();
-            var connectionString = _multiConnectionService.GetConnectionString(firstConnection.Id);
-            if (string.IsNullOrEmpty(connectionString))
+            var result = await _multiConnectionService.TestStoredConnectionAsync(firstConnection.Id);
+
+            if (!result.Success)
             {
-                return StatusCode(503, new 
-                { 
+                return StatusCode(503, new
+                {
                     status = "Unhealthy",
-                    reason = "Cannot retrieve connection string",
+                    reason = result.Message ?? "Cannot connect to SQL Server",
                     timestamp = DateTime.UtcNow
                 });
             }
 
-            var health = await _healthService.GetServerHealthAsync(connectionString);
-            
-            if (!health.IsConnected)
+            return Ok(new
             {
-                return StatusCode(503, new 
-                { 
-                    status = "Unhealthy",
-                    reason = health.ErrorMessage ?? "Cannot connect to SQL Server",
-                    timestamp = DateTime.UtcNow
-                });
-            }
-            
-            return Ok(new 
-            { 
                 status = "Healthy",
-                serverName = health.ServerName,
+                serverName = firstConnection.Server,
                 timestamp = DateTime.UtcNow
             });
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Readiness probe failed");
-            return StatusCode(503, new 
-            { 
+            return StatusCode(503, new
+            {
                 status = "Unhealthy",
                 reason = "Error checking SQL Server connection",
                 timestamp = DateTime.UtcNow

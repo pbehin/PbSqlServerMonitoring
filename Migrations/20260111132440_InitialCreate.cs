@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,7 +11,6 @@ namespace PbSqlServerMonitoring.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // MetricSnapshots
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MetricSnapshots')
                 BEGIN
@@ -30,7 +29,6 @@ namespace PbSqlServerMonitoring.Migrations
                 END
             ");
 
-            // BlockingHistory
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'BlockingHistory')
                 BEGIN
@@ -49,7 +47,6 @@ namespace PbSqlServerMonitoring.Migrations
                 END
             ");
 
-            // QueryHistory
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'QueryHistory')
                 BEGIN
@@ -71,7 +68,6 @@ namespace PbSqlServerMonitoring.Migrations
                 END
             ");
 
-            // Indices
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_BlockingHistory_SnapshotId' AND object_id = OBJECT_ID('BlockingHistory'))
                 BEGIN

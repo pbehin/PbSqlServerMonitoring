@@ -12,7 +12,7 @@ public sealed class MultiConnectionConfig
     /// Default is 5, configurable via appsettings or environment variable.
     /// </summary>
     public int MaxConnections { get; set; } = 5;
-    
+
     /// <summary>
     /// List of configured connections.
     /// </summary>
@@ -31,83 +31,83 @@ public sealed class ServerConnection
     [Key]
     [MaxLength(16)]
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..16];
-    
+
     /// <summary>
     /// User ID that owns this connection (for multi-tenant isolation).
     /// </summary>
     [MaxLength(450)]
     public string? UserId { get; set; }
-    
+
     /// <summary>
     /// Display name for the connection (user-friendly identifier).
     /// </summary>
     [MaxLength(200)]
     public string Name { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// SQL Server hostname or IP address.
     /// </summary>
     [MaxLength(500)]
     public string Server { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// Database name to connect to.
     /// </summary>
     [MaxLength(128)]
     public string Database { get; set; } = "master";
-    
+
     /// <summary>
     /// Whether to use Windows Authentication.
     /// </summary>
     public bool UseWindowsAuth { get; set; }
-    
+
     /// <summary>
     /// SQL Server username (only used if not using Windows Auth).
     /// </summary>
     [MaxLength(128)]
     public string? Username { get; set; }
-    
+
     /// <summary>
     /// Encrypted connection string stored in the database.
     /// </summary>
     public string? EncryptedConnectionString { get; set; }
-    
+
     /// <summary>
     /// Whether to trust the server certificate.
     /// </summary>
     public bool TrustCertificate { get; set; } = true;
-    
+
     /// <summary>
     /// Connection timeout in seconds.
     /// </summary>
     public int Timeout { get; set; } = 30;
-    
+
     /// <summary>
     /// Whether this connection is enabled for monitoring.
     /// </summary>
     public bool IsEnabled { get; set; } = true;
-    
+
     /// <summary>
     /// When this connection was added.
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    
+
     /// <summary>
     /// Last time this connection was successfully tested.
     /// </summary>
     public DateTime? LastSuccessfulConnection { get; set; }
-    
+
     /// <summary>
     /// Current connection status.
     /// </summary>
     public ConnectionStatus Status { get; set; } = ConnectionStatus.Unknown;
-    
+
     /// <summary>
     /// Last error message if connection failed.
     /// </summary>
     [MaxLength(2000)]
     public string? LastError { get; set; }
-    
+
     /// <summary>
     /// When the connection entered RequiresReauthentication status.
     /// Used for automatic cleanup of stale connections.

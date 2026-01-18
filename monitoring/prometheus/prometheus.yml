@@ -1,0 +1,24 @@
+# Prometheus Configuration with HTTP Service Discovery
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    monitor: 'sql-server-monitoring'
+
+# External URL for proper link generation in UI
+# This ensures links don't use the container hostname
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # SQL Server monitoring via sql_exporter
+  # Targets are dynamically managed in sql_exporter.yml by the .NET app
+  - job_name: 'sql_servers'
+    static_configs:
+      - targets: ['sql_exporter:9399']
+    metrics_path: /metrics

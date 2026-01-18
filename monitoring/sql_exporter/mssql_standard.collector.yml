@@ -1,0 +1,130 @@
+collector_name: mssql_standard
+
+metrics:
+  - metric_name: mssql_cpu
+    type: gauge
+    help: 'SQL Server CPU Usage (%)'
+    values: [cpu_sql]
+    query: |
+      SELECT TOP(1)
+        record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') as cpu_idle,
+        record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') as cpu_sql
+      FROM (
+        SELECT TOP(1) [timestamp], CONVERT(xml, record) as record
+        FROM sys.dm_os_ring_buffers
+        WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'
+        AND record LIKE '%<SystemHealth>%'
+        ORDER BY [timestamp] DESC
+      ) as x
+
+  - metric_name: mssql_connections
+    type: gauge
+    help: 'Total number of user connections'
+    values: [UserConnections]
+    query: |
+      SELECT cntr_value as UserConnections
+      FROM sys.dm_os_performance_counters
+      WHERE object_name LIKE '%:General Statistics%'
+      AND counter_name = 'User Connections'
+
+  - metric_name: mssql_deadlocks
+    type: counter
+    help: 'Number of deadlocks per second'
+    values: [Deadlocks]
+    query: |
+      SELECT cntr_value as Deadlocks
+      FROM sys.dm_os_performance_counters
+      WHERE object_name LIKE '%:Locks%'
+      AND counter_name = 'Number of Deadlocks/sec'
+      AND instance_name = '_Total'
+
+  - metric_name: mssql_batch_requests
+    type: counter
+    help: 'Number of batch requests per second'
+    values: [BatchRequests]
+    query: |
+      SELECT cntr_value as BatchRequests
+      FROM sys.dm_os_performance_counters
+      WHERE object_name LIKE '%:SQL Statistics%'
+      AND counter_name = 'Batch Requests/sec'
+
+  - metric_name: mssql_page_life_expectancy
+    type: gauge
+    help: 'Page Life Expectancy in seconds'
+    values: [PLE]
+    query: |
+      SELECT cntr_value as PLE
+      FROM sys.dm_os_performance_counters
+      WHERE object_name LIKE '%:Buffer Manager%'
+      AND counter_name = 'Page life expectancy'
+
+  - metric_name: mssql_buffer_cache
+    type: gauge
+    help: 'Buffer Cache Hit Ratio'
+    values: [BufferCacheHitRatio]
+    query: |
+      SELECT 
+        CAST((a.cntr_value * 1.0 / b.cntr_value) * 100.0 AS decimal(10,2)) as BufferCacheHitRatio
+      FROM sys.dm_os_performance_counters a
+      JOIN (SELECT cntr_value, object_name FROM sys.dm_os_performance_counters  
+            WHERE counter_name = 'Buffer cache hit ratio base') b 
+      ON a.object_name = b.object_name
+      WHERE a.counter_name = 'Buffer cache hit ratio'
+      AND a.object_name LIKE '%:Buffer Manager%'
+
+  - metric_name: mssql_memory
+    type: gauge
+    help: 'SQL Server Memory Usage (MB)'
+    value_label: encoded_value
+    values: [total_server_memory_mb, target_server_memory_mb]
+    query: |
+      SELECT
+        (SELECT cntr_value/1024 FROM sys.dm_os_performance_counters WHERE counter_name = 'Total Server Memory (KB)') as total_server_memory_mb,
+        (SELECT cntr_value/1024 FROM sys.dm_os_performance_counters WHERE counter_name = 'Target Server Memory (KB)') as target_server_memory_mb
+
+  - metric_name: mssql_database_size
+    type: gauge
+    help: 'Database size in MB'
+    key_labels: [db_name]
+    values: [size_mb]
+    query: |
+      SELECT 
+        DB_NAME(database_id) as db_name,
+        CAST(SUM(size) * 8. / 1024 AS DECIMAL(10,2)) as size_mb
+      FROM sys.master_files
+      GROUP BY database_id
+
+  - metric_name: mssql_wait_stats
+    type: counter
+    help: 'Wait stats by type'
+    key_labels: [wait_type]
+    value_label: measure
+    values: [wait_time_ms, waiting_tasks_count]
+    query: |
+      SELECT TOP 20
+        wait_type,
+        wait_time_ms,
+        waiting_tasks_count
+      FROM sys.dm_os_wait_stats
+      WHERE wait_type NOT IN (
+        'BROKER_EVENTHANDLER', 'BROKER_RECEIVE_WAITFOR', 'BROKER_TASK_STOP', 'BROKER_TO_FLUSH',
+        'BROKER_TRANSMITTER', 'CHECKPOINT_QUEUE', 'CHKPT', 'CLR_AUTO_EVENT', 'CLR_MANUAL_EVENT',
+        'CLR_SEMAPHORE', 'DBMIRROR_DBM_EVENT', 'DBMIRROR_EVENTS_QUEUE', 'DBMIRROR_WORKER_QUEUE',
+        'DBMIRRORING_CMD', 'DIRTY_PAGE_POLL', 'DISPATCHER_QUEUE_SEMAPHORE', 'EXECSYNC',
+        'FSAGENT', 'FT_IFTS_SCHEDULER_IDLE_WAIT', 'FT_IFTSHC_MUTEX', 'HADR_CLUSAPI_CALL',
+        'HADR_FILESTREAM_IOMGR_IOCOMPLETION', 'HADR_LOGCAPTURE_WAIT', 'HADR_NOTIFICATION_DEQUEUE',
+        'HADR_TIMER_TASK', 'HADR_WORK_QUEUE', 'KSOURCE_WAKEUP', 'LAZYWRITER_SLEEP',
+        'LOGMGR_QUEUE', 'MEMORY_ALLOCATION_EXT', 'ONDEMAND_TASK_QUEUE',
+        'PREEMPTIVE_XE_GETTARGETSTATE', 'PWAIT_ALL_COMPONENTS_INITIALIZED',
+        'PWAIT_DIRECTLOGCONSUMER_GETNEXT', 'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+        'QDS_ASYNC_QUEUE', 'QDS_CLEANUP_STALE', 'QDS_SHUTDOWN_QUEUE',
+        'REDO_THREAD_PENDING_WORK', 'REQUEST_FOR_DEADLOCK_SEARCH', 'RESOURCE_QUEUE',
+        'SERVER_IDLE_CHECK', 'SLEEP_BPOOL_FLUSH', 'SLEEP_DBSTARTUP', 'SLEEP_DCOMSTARTUP',
+        'SLEEP_MASTERDBREADY', 'SLEEP_MASTERMDREADY', 'SLEEP_MASTERUPGRADED',
+        'SLEEP_MSDBSTARTUP', 'SLEEP_SYSTEMTASK', 'SLEEP_TASK', 'SLEEP_TEMPDBSTARTUP',
+        'SNI_HTTP_ACCEPT', 'SP_SERVER_DIAGNOSTICS_SLEEP', 'SQLTRACE_BUFFER_FLUSH',
+        'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', 'SQLTRACE_WAIT_ENTRIES', 'WAIT_FOR_RESULTS',
+        'WAITFOR', 'WAITFOR_TASKSHUTDOWN', 'HADD_SYNC_COMMIT', 'WRITELOG',
+        'XE_DISPATCHER_JOIN', 'XE_DISPATCHER_WAIT', 'XE_TIMER_EVENT'
+      )
+      ORDER BY wait_time_ms DESC

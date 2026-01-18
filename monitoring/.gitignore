@@ -1,0 +1,6 @@
+# Monitoring stack environment
+.env
+
+# Podman/Docker data
+prometheus_data/
+grafana_data/

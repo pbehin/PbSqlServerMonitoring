@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -31,7 +31,7 @@ namespace PbSqlServerMonitoring.Migrations
                     ALTER TABLE QueryHistory ADD AvgElapsedTimeMs float NOT NULL DEFAULT 0;
                 END
             ");
-            
+
             migrationBuilder.Sql(@"
                 IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('QueryHistory') AND name = 'LastExecutionTime')
                 BEGIN

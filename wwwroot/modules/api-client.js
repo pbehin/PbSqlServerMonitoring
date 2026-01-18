@@ -62,9 +62,8 @@ class ApiClient {
         });
 
         const result = await response.json();
-        
+
         if (!response.ok) {
-            // Extract error message from response
             const errorMessage = result.error || result.message || `API error: ${response.status} ${response.statusText}`;
             const error = new Error(errorMessage);
             error.status = response.status;
@@ -92,66 +91,12 @@ class ApiClient {
         return response.ok;
     }
 
-    // API Endpoints
-
     async getServerHealth() {
         return this.get('/api/health');
     }
 
-    async getMetricsHistory(rangeSeconds, page = 1, pageSize = 100) {
-        return this.get('/api/metrics/history', { rangeSeconds, page, pageSize });
-    }
-
-    async getMetricsHistoryByRange(from, to, page = 1, pageSize = 100) {
-        return this.get('/api/metrics/history/range', { from, to, page, pageSize });
-    }
-
-    async getLatestMetric() {
-        return this.get('/api/metrics/latest');
-    }
-
-    async getBufferHealth() {
-        return this.get('/api/metrics/buffer-health');
-    }
-
-    async getBlockingHistory(rangeSeconds) {
-        return this.get('/api/metrics/blocking-history', { rangeSeconds });
-    }
-
-    async getTopCpuQueries(top = 25, page = 1, pageSize = 25) {
-        return this.get('/api/queries/top-cpu', { top, page, pageSize });
-    }
-
-    async getActiveCpuQueries(top = 5) {
-        return this.get('/api/queries/active-cpu', { top, _: Date.now() });
-    }
-
-    async getQueryHistory(hours = 24, sortBy = 'cpu', page = 1, pageSize = 50) {
-        return this.get('/api/queries/history', { hours, sortBy, page, pageSize });
-    }
-
-    async getTopIoQueries(top = 25, page = 1, pageSize = 25) {
-        return this.get('/api/queries/top-io', { top, page, pageSize });
-    }
-
-    async getSlowestQueries(top = 25, page = 1, pageSize = 25) {
-        return this.get('/api/queries/slowest', { top, page, pageSize });
-    }
-
-    async getMissingIndexes(top = 50, page = 1, pageSize = 25) {
-        return this.get('/api/indexes/missing', { top, page, pageSize });
-    }
-
-    async getBlockingSessions() {
-        return this.get('/api/blocking/active');
-    }
-
-    async getCurrentLocks(page = 1, pageSize = 50) {
-        return this.get('/api/locks/current', { page, pageSize });
-    }
-
-    async getRunningQueries(page = 1, pageSize = 50) {
-        return this.get('/api/running/active', { page, pageSize });
+    async checkServerConnection(connectionId) {
+        return this.get('/api/health', { connectionId });
     }
 
     async getConnectionSettings() {
@@ -171,5 +116,4 @@ class ApiClient {
     }
 }
 
-// Export singleton instance
 window.apiClient = new ApiClient();

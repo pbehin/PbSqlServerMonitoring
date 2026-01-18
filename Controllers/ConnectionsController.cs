@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using PbSqlServerMonitoring.Models;
@@ -9,13 +10,13 @@ namespace PbSqlServerMonitoring.Controllers;
 
 /// <summary>
 /// API controller for managing multiple SQL Server connections.
-/// 
+///
 /// Features:
 /// - Add/remove connections (up to configured limit)
 /// - Enable/disable individual connections
 /// - Test connections
 /// - Get status of all connections
-/// 
+///
 /// Security:
 /// - All endpoints require authorization
 /// - Passwords are never returned in responses
@@ -26,41 +27,43 @@ namespace PbSqlServerMonitoring.Controllers;
 [Route("api/[controller]")]
 public sealed class ConnectionsController : ControllerBase
 {
-    private readonly MultiConnectionService _connectionService;
-    private readonly UserPreferencesService _userPreferencesService;
+    private readonly IMultiConnectionService _connectionService;
+    private readonly IUserPreferencesService _userPreferencesService;
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<ConnectionsController> _logger;
+    private readonly IPrometheusTargetExporter _prometheusExporter;
 
     public ConnectionsController(
-        MultiConnectionService connectionService,
-        UserPreferencesService userPreferencesService,
-        ILogger<ConnectionsController> logger)
+        IMultiConnectionService connectionService,
+        IUserPreferencesService userPreferencesService,
+        UserManager<ApplicationUser> userManager,
+        IConfiguration configuration,
+        ILogger<ConnectionsController> logger,
+        IPrometheusTargetExporter prometheusExporter)
     {
         _connectionService = connectionService;
         _userPreferencesService = userPreferencesService;
+        _userManager = userManager;
+        _configuration = configuration;
         _logger = logger;
+        _prometheusExporter = prometheusExporter;
     }
 
-    #region Endpoints
-    
-    /// <summary>
-    /// Gets the status of all configured connections.
-    /// </summary>
-    /// <returns>Overview of all connections including health status</returns>
     [HttpGet]
     [ProducesResponseType(typeof(MultiConnectionStatusResponse), StatusCodes.Status200OK)]
     public IActionResult GetAllConnections()
     {
         var userId = GetUserIdentifier();
         var status = _connectionService.GetStatus();
-        
-        // Filter to only show connections owned by this user
+
         status.Connections = status.Connections
             .Where(c => _connectionService.GetConnection(c.Id)?.UserId == userId)
             .ToList();
         status.ActiveConnections = status.Connections.Count;
         status.HealthyConnections = status.Connections.Count(c => c.Status == ConnectionStatus.Connected);
         status.FailedConnections = status.Connections.Count(c => c.Status == ConnectionStatus.Error || c.Status == ConnectionStatus.Disconnected);
-        
+
         return Ok(status);
     }
 
@@ -76,7 +79,7 @@ public sealed class ConnectionsController : ControllerBase
     {
         var userId = GetUserIdentifier();
         var connection = _connectionService.GetConnection(id);
-        
+
         if (connection == null || connection.UserId != userId)
         {
             return NotFound(new { success = false, message = "Connection not found." });
@@ -102,22 +105,29 @@ public sealed class ConnectionsController : ControllerBase
         }
 
         var userId = GetUserIdentifier();
-        var result = await _connectionService.AddConnectionAsync(request, userId);
+
+        var user = await _userManager.FindByIdAsync(userId);
+        var userMaxConnections = user?.MaxConnections
+            ?? _configuration.GetValue("Monitoring:DefaultUserMaxConnections", 2);
+
+        var result = await _connectionService.AddConnectionAsync(request, userId, userMaxConnections);
 
         if (!result.Success)
         {
             return BadRequest(new { success = false, message = result.Message });
         }
-        
-        // Connection is strongly typed now with UserId persisted by service
-        _logger.LogInformation("Connection added for user {UserId}: {ConnectionName} ({Server})", 
+
+        _logger.LogInformation("Connection added for user {UserId}: {ConnectionName} ({Server})",
             userId, result.Connection!.Name, result.Connection.Server);
 
+        // Update exporter immediately
+        await _prometheusExporter.ExportTargetsAsync(HttpContext.RequestAborted);
+
         return Created(
-            $"/api/connections/{result.Connection.Id}", 
-            new 
-            { 
-                success = true, 
+            $"/api/connections/{result.Connection.Id}",
+            new
+            {
+                success = true,
                 message = result.Message,
                 connection = MapToResponse(result.Connection)
             });
@@ -134,13 +144,12 @@ public sealed class ConnectionsController : ControllerBase
     {
         var userId = GetUserIdentifier();
         var connection = _connectionService.GetConnection(id);
-        
-        // Verify ownership
+
         if (connection == null || connection.UserId != userId)
         {
             return NotFound(new { success = false, message = "Connection not found." });
         }
-        
+
         var result = await _connectionService.RemoveConnectionAsync(id);
 
         if (!result.Success)
@@ -149,6 +158,9 @@ public sealed class ConnectionsController : ControllerBase
         }
 
         _logger.LogInformation("Connection removed by user {UserId}: {ConnectionId}", userId, id);
+
+        // Update exporter immediately
+        await _prometheusExporter.ExportTargetsAsync(HttpContext.RequestAborted);
 
         return Ok(new { success = true, message = result.Message });
     }
@@ -165,19 +177,21 @@ public sealed class ConnectionsController : ControllerBase
     {
         var userId = GetUserIdentifier();
         var connection = _connectionService.GetConnection(id);
-        
-        // Verify ownership
+
         if (connection == null || connection.UserId != userId)
         {
             return NotFound(new { success = false, message = "Connection not found." });
         }
-        
+
         var result = await _connectionService.SetConnectionEnabledAsync(id, request.Enabled);
 
         if (!result.Success)
         {
             return NotFound(new { success = false, message = result.Message });
         }
+
+        // Update exporter immediately
+        await _prometheusExporter.ExportTargetsAsync(HttpContext.RequestAborted);
 
         return Ok(new { success = true, message = result.Message });
     }
@@ -187,26 +201,28 @@ public sealed class ConnectionsController : ControllerBase
     /// </summary>
     /// <param name="id">Connection ID to test</param>
     [HttpPost("{id}/test")]
-    [EnableRateLimiting("connection-test")] // Stricter rate limit to prevent brute-force
+    [EnableRateLimiting("connection-test")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> TestConnection(string id)
     {
         var userId = GetUserIdentifier();
         var connection = _connectionService.GetConnection(id);
-        
-        // Verify ownership
+
         if (connection == null || connection.UserId != userId)
         {
             return NotFound(new { success = false, message = "Connection not found." });
         }
-        
+
         var result = await _connectionService.TestStoredConnectionAsync(id);
 
         if (!result.Success)
         {
             return Ok(new { success = false, message = result.Message });
         }
+
+        // Update exporter immediately (if successful, it might be connected now)
+        await _prometheusExporter.ExportTargetsAsync(HttpContext.RequestAborted);
 
         return Ok(new { success = true, message = result.Message });
     }
@@ -222,13 +238,12 @@ public sealed class ConnectionsController : ControllerBase
     {
         var userId = GetUserIdentifier();
         var connection = _connectionService.GetConnection(id);
-        
-        // Verify ownership
+
         if (connection == null || connection.UserId != userId)
         {
             return NotFound(new { success = false, message = "Connection not found." });
         }
-        
+
         var result = await _connectionService.DisconnectConnectionAsync(id);
 
         if (!result.Success)
@@ -238,6 +253,9 @@ public sealed class ConnectionsController : ControllerBase
 
         _logger.LogInformation("Connection disconnected by user {UserId}: {ConnectionId}", userId, id);
 
+        // Update exporter immediately (to stop data gathering)
+        await _prometheusExporter.ExportTargetsAsync(HttpContext.RequestAborted);
+
         return Ok(new { success = true, message = result.Message });
     }
 
@@ -245,17 +263,17 @@ public sealed class ConnectionsController : ControllerBase
     /// Tests all enabled connections.
     /// </summary>
     [HttpPost("test-all")]
-    [EnableRateLimiting("connection-test")] // Stricter rate limit to prevent abuse
+    [EnableRateLimiting("connection-test")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> TestAllConnections()
     {
         await _connectionService.TestAllConnectionsAsync();
-        
+
         var status = _connectionService.GetStatus();
-        
-        return Ok(new 
-        { 
-            success = true, 
+
+        return Ok(new
+        {
+            success = true,
             message = $"Tested {status.ActiveConnections} connections. {status.HealthyConnections} healthy, {status.FailedConnections} failed.",
             status
         });
@@ -285,22 +303,20 @@ public sealed class ConnectionsController : ControllerBase
     {
         var userId = GetUserIdentifier();
         var activeId = _userPreferencesService.GetActiveConnectionId(userId);
-        
-        // Validate the connection still exists and is enabled
+
         if (!string.IsNullOrEmpty(activeId))
         {
             var connection = _connectionService.GetConnection(activeId);
             if (connection == null || !connection.IsEnabled)
             {
-                // Clear invalid active connection
                 _userPreferencesService.SetActiveConnectionId(userId, null);
                 activeId = null;
             }
         }
-        
+
         return Ok(new { activeConnectionId = activeId });
     }
-    
+
     /// <summary>
     /// Sets the user's active connection ID.
     /// </summary>
@@ -310,8 +326,7 @@ public sealed class ConnectionsController : ControllerBase
     public IActionResult SetActiveConnection([FromBody] SetActiveConnectionRequest request)
     {
         var userId = GetUserIdentifier();
-        
-        // Validate the connection exists and is enabled
+
         if (!string.IsNullOrEmpty(request.ConnectionId))
         {
             var connection = _connectionService.GetConnection(request.ConnectionId);
@@ -324,17 +339,13 @@ public sealed class ConnectionsController : ControllerBase
                 return BadRequest(new { success = false, message = "Connection is disabled." });
             }
         }
-        
+
         _userPreferencesService.SetActiveConnectionId(userId, request.ConnectionId);
-        
+
         _logger.LogInformation("User set active connection to {ConnectionId}", request.ConnectionId ?? "(none)");
-        
+
         return Ok(new { success = true, activeConnectionId = request.ConnectionId });
     }
-
-    #endregion
-
-    #region Helpers
 
     private static ConnectionInfoResponse MapToResponse(ServerConnection connection)
     {
@@ -355,26 +366,23 @@ public sealed class ConnectionsController : ControllerBase
             LastError = connection.LastError
         };
     }
-    
+
     /// <summary>
     /// Gets the current user's ID from ASP.NET Core Identity.
     /// </summary>
     private string GetUserIdentifier()
     {
-        // Get user ID from Identity claims (set by ASP.NET Core Identity)
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        
+
         if (string.IsNullOrEmpty(userId))
         {
-            // Fallback for edge cases (should not happen with [Authorize])
             _logger.LogWarning("User ID not found in claims");
             return "anonymous";
         }
-        
+
         return userId;
     }
 
-    #endregion
 }
 
 /// <summary>

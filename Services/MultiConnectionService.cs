@@ -11,13 +11,13 @@ namespace PbSqlServerMonitoring.Services;
 
 /// <summary>
 /// Manages multiple SQL Server connections with secure database storage.
-/// 
+///
 /// Features:
 /// - Add/remove/update connections
 /// - Secure connection string storage using Data Protection API
 /// - Connection status monitoring for all configured connections
 /// - Configurable connection limit
-/// 
+///
 /// Security:
 /// - Passwords encrypted at rest in database
 /// - Connection strings never logged
@@ -25,53 +25,45 @@ namespace PbSqlServerMonitoring.Services;
 /// </summary>
 public sealed class MultiConnectionService : IMultiConnectionService, IDisposable
 {
-    #region Constants
-    
     private const string ProtectionPurpose = "PbSqlServerMonitoring.MultiConnections.v1";
     private const int DefaultMaxConnections = 5;
-    
-    #endregion
 
-    #region Fields
-    
     private readonly IDataProtector _protector;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MultiConnectionService> _logger;
     private readonly IConfiguration _configuration;
-    private readonly SemaphoreSlim _lock = new(1, 1);
-    
-    // Config
-    private readonly int _maxConnections;
-    
-    #endregion
 
-    #region Constructor
-    
+    private readonly IPrometheusTargetExporter _prometheusExporter;
+    private readonly SemaphoreSlim _lock = new(1, 1);
+
+    private readonly int _maxConnections;
+
+
+
     public MultiConnectionService(
         IDataProtectionProvider dataProtection,
         IServiceScopeFactory scopeFactory,
         ILogger<MultiConnectionService> logger,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        IPrometheusTargetExporter prometheusExporter)
     {
         _protector = dataProtection.CreateProtector(ProtectionPurpose);
         _scopeFactory = scopeFactory;
         _logger = logger;
         _configuration = configuration;
-        
-        // Load max connections
+        _prometheusExporter = prometheusExporter;
+
         _maxConnections = _configuration.GetValue(
             "Monitoring:MaxConnections",
-            int.TryParse(Environment.GetEnvironmentVariable("PB_MONITOR_MAX_CONNECTIONS"), out var envMax) 
-                ? envMax 
+            int.TryParse(Environment.GetEnvironmentVariable("PB_MONITOR_MAX_CONNECTIONS"), out var envMax)
+                ? envMax
                 : DefaultMaxConnections);
     }
-    
-    #endregion
 
-    #region Public Properties
-    
+
+
     public int MaxConnections => _maxConnections;
-    
+
     public int ConnectionCount
     {
         get
@@ -81,7 +73,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             return dbContext.ServerConnections.Count();
         }
     }
-    
+
     public IReadOnlyList<ServerConnection> Connections
     {
         get
@@ -91,14 +83,13 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             return dbContext.ServerConnections.AsNoTracking().ToList().AsReadOnly();
         }
     }
-    
-    #endregion
 
-    #region Connection Management
-    
+
+
     public async Task<(bool Success, string Message, ServerConnection? Connection)> AddConnectionAsync(
-        AddConnectionRequest request, 
+        AddConnectionRequest request,
         string? userId = null,
+        int? userMaxConnections = null,
         CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken);
@@ -106,41 +97,42 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
-            // Check global connection limit (or per-user if preferred, currently global)
-            var currentCount = await dbContext.ServerConnections.CountAsync(cancellationToken);
-            if (currentCount >= _maxConnections)
+
+            var effectiveMax = userMaxConnections ?? _configuration.GetValue("Monitoring:DefaultUserMaxConnections", 2);
+            var userConnectionCount = await dbContext.ServerConnections
+                .CountAsync(c => c.UserId == userId, cancellationToken);
+
+            if (userConnectionCount >= effectiveMax)
             {
-                return (false, $"Maximum of {_maxConnections} connections allowed. Remove a connection first.", null);
+                return (false, $"You have reached your connection limit of {effectiveMax}. Remove a connection first.", null);
             }
-            
+
             var (serverValid, sanitizedServer, serverError) = InputValidationExtensions.ValidateServerName(request.Server);
             if (!serverValid) return (false, serverError!, null);
-            
+
             var (dbValid, sanitizedDb, dbError) = InputValidationExtensions.ValidateDatabaseName(request.Database);
             if (!dbValid) return (false, dbError!, null);
-            
+
             if (!request.UseWindowsAuth)
             {
                 var (userValid, sanitizedUser, userError) = InputValidationExtensions.ValidateUsername(request.Username);
                 if (!userValid) return (false, userError!, null);
             }
-            
-            // Check duplicate for this user
-            var exists = await dbContext.ServerConnections.AnyAsync(c => 
+
+            var exists = await dbContext.ServerConnections.AnyAsync(c =>
                 c.UserId == userId &&
                 c.Server.ToLower() == request.Server.ToLower() &&
                 c.Database.ToLower() == request.Database.ToLower(), cancellationToken);
-                
+
             if (exists)
             {
                 return (false, $"A connection to {request.Server}/{request.Database} already exists.", null);
             }
-            
+
             var connectionString = BuildConnectionString(request);
             var testResult = await TestConnectionAsync(connectionString);
             if (!testResult.Success) return (false, $"Connection test failed: {testResult.Message}", null);
-            
+
             var connection = new ServerConnection
             {
                 Id = Guid.NewGuid().ToString("N")[..16],
@@ -158,11 +150,15 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
                 LastSuccessfulConnection = DateTime.UtcNow,
                 Status = ConnectionStatus.Connected
             };
-            
+
             dbContext.ServerConnections.Add(connection);
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
             _logger.LogInformation("Added connection {ConnectionId}", connection.Id);
+
+            try { await _prometheusExporter.ExportTargetsAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to update Prometheus targets"); }
+
             return (true, "Connection added successfully.", connection);
         }
         finally
@@ -170,9 +166,9 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     public async Task<(bool Success, string Message)> RemoveConnectionAsync(
-        string connectionId, 
+        string connectionId,
         CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken);
@@ -180,14 +176,18 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var connection = await dbContext.ServerConnections.FindAsync([connectionId], cancellationToken);
             if (connection == null) return (false, "Connection not found.");
-            
+
             dbContext.ServerConnections.Remove(connection);
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
             _logger.LogInformation("Removed connection {ConnectionId}", connectionId);
+
+            try { await _prometheusExporter.ExportTargetsAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to update Prometheus targets"); }
+
             return (true, "Connection removed successfully.");
         }
         finally
@@ -195,9 +195,9 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     public async Task<(bool Success, string Message)> SetConnectionEnabledAsync(
-        string connectionId, 
+        string connectionId,
         bool enabled,
         CancellationToken cancellationToken = default)
     {
@@ -206,13 +206,16 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var connection = await dbContext.ServerConnections.FindAsync([connectionId], cancellationToken);
             if (connection == null) return (false, "Connection not found.");
-            
+
             connection.IsEnabled = enabled;
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
+            try { await _prometheusExporter.ExportTargetsAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to update Prometheus targets"); }
+
             return (true, $"Connection {(enabled ? "enabled" : "disabled")}.");
         }
         finally
@@ -220,38 +223,37 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     public ServerConnection? GetConnection(string connectionId)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
         return dbContext.ServerConnections.AsNoTracking().FirstOrDefault(c => c.Id == connectionId);
     }
-    
+
     public string? GetConnectionString(string connectionId)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
         var connection = dbContext.ServerConnections.AsNoTracking().FirstOrDefault(c => c.Id == connectionId);
-        
+
         if (connection?.EncryptedConnectionString == null) return null;
-        
+
         try { return DecryptConnectionString(connection.EncryptedConnectionString); }
-        catch (System.Security.Cryptography.CryptographicException ex) 
+        catch (System.Security.Cryptography.CryptographicException ex)
         {
             _logger.LogWarning(ex, "Decryption failed for {Id} - encryption key may have been lost. Connection requires reauthentication.", connectionId);
-            
-            // Mark connection as requiring reauthentication
+
             MarkConnectionForReauthentication(connectionId);
             return null;
         }
-        catch (Exception ex) 
+        catch (Exception ex)
         {
             _logger.LogError(ex, "Encryption error for {Id}", connectionId);
             return null;
         }
     }
-    
+
     private void MarkConnectionForReauthentication(string connectionId)
     {
         try
@@ -272,7 +274,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _logger.LogError(ex, "Failed to mark connection {Id} for reauthentication", connectionId);
         }
     }
-    
+
     /// <summary>
     /// Updates credentials for an existing connection (e.g., after encryption key loss).
     /// </summary>
@@ -288,11 +290,10 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var connection = await dbContext.ServerConnections.FindAsync([connectionId], cancellationToken);
             if (connection == null) return (false, "Connection not found.");
-            
-            // Build new connection string with updated credentials
+
             var request = new AddConnectionRequest
             {
                 Server = connection.Server,
@@ -303,12 +304,11 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
                 TrustCertificate = connection.TrustCertificate,
                 Timeout = connection.Timeout
             };
-            
+
             var connectionString = BuildConnectionString(request);
             var testResult = await TestConnectionAsync(connectionString);
             if (!testResult.Success) return (false, $"Connection test failed: {testResult.Message}");
-            
-            // Update connection
+
             connection.UseWindowsAuth = useWindowsAuth;
             connection.Username = useWindowsAuth ? null : username;
             connection.EncryptedConnectionString = EncryptConnectionString(connectionString);
@@ -316,10 +316,14 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             connection.LastError = null;
             connection.LastSuccessfulConnection = DateTime.UtcNow;
             connection.RequiresReauthenticationSince = null;
-            
+
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
             _logger.LogInformation("Updated credentials for connection {ConnectionId}", connectionId);
+
+            try { await _prometheusExporter.ExportTargetsAsync(cancellationToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to update Prometheus targets"); }
+
             return (true, "Credentials updated successfully.");
         }
         finally
@@ -327,7 +331,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     public IReadOnlyList<ServerConnection> GetEnabledConnections()
     {
         using var scope = _scopeFactory.CreateScope();
@@ -338,13 +342,13 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             .ToList()
             .AsReadOnly();
     }
-    
+
     public MultiConnectionStatusResponse GetStatus()
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
         var connections = dbContext.ServerConnections.AsNoTracking().ToList();
-        
+
         return new MultiConnectionStatusResponse
         {
             MaxConnections = _maxConnections,
@@ -354,11 +358,9 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             Connections = connections.Select(MapToResponse).ToList()
         };
     }
-    
-    #endregion
 
-    #region Connection Testing
-    
+
+
     public async Task<(bool Success, string Message, string? ServerVersion)> TestConnectionAsync(string connectionString)
     {
         try
@@ -376,7 +378,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             return (false, $"Connection failed: {ex.Message}", null);
         }
     }
-    
+
     public async Task<(bool Success, string Message)> TestStoredConnectionAsync(
         string connectionId,
         CancellationToken cancellationToken = default)
@@ -387,19 +389,19 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             await UpdateConnectionStatusAsync(connectionId, ConnectionStatus.Error, "Missing connection string.");
             return (false, "Missing connection string.");
         }
-        
+
         await UpdateConnectionStatusAsync(connectionId, ConnectionStatus.Testing, null);
-        
+
         var result = await TestConnectionAsync(connectionString);
-        
+
         if (result.Success)
             await UpdateConnectionStatusAsync(connectionId, ConnectionStatus.Connected, null);
         else
             await UpdateConnectionStatusAsync(connectionId, ConnectionStatus.Error, result.Message);
-            
+
         return (result.Success, result.Message);
     }
-    
+
     public async Task TestAllConnectionsAsync(CancellationToken cancellationToken = default)
     {
         var enabledConnections = GetEnabledConnections();
@@ -410,7 +412,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             catch { /* Logged inside */ }
         }
     }
-    
+
     /// <summary>
     /// Disconnects a connection - stops data collection by setting status to Disconnected.
     /// </summary>
@@ -423,14 +425,14 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var connection = await dbContext.ServerConnections.FindAsync([connectionId], cancellationToken);
             if (connection == null) return (false, "Connection not found.");
-            
+
             connection.Status = ConnectionStatus.Disconnected;
             connection.LastError = null;
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
             _logger.LogInformation("Disconnected connection {ConnectionId}", connectionId);
             return (true, "Connection disconnected. Data collection stopped.");
         }
@@ -439,7 +441,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     /// <summary>
     /// Removes connections that have been in RequiresReauthentication status for longer than the specified duration.
     /// </summary>
@@ -447,31 +449,31 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
     {
         var threshold = maxAge ?? TimeSpan.FromHours(24);
         var cutoffTime = DateTime.UtcNow - threshold;
-        
+
         await _lock.WaitAsync(cancellationToken);
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var staleConnections = await dbContext.ServerConnections
-                .Where(c => c.Status == ConnectionStatus.RequiresReauthentication 
-                         && c.RequiresReauthenticationSince.HasValue 
+                .Where(c => c.Status == ConnectionStatus.RequiresReauthentication
+                         && c.RequiresReauthenticationSince.HasValue
                          && c.RequiresReauthenticationSince.Value < cutoffTime)
                 .ToListAsync(cancellationToken);
-            
+
             if (staleConnections.Count == 0) return 0;
-            
+
             foreach (var conn in staleConnections)
             {
                 _logger.LogInformation(
-                    "Removed stale connection {ConnectionId} ({Name}) - required reauthentication since {Since}", 
+                    "Removed stale connection {ConnectionId} ({Name}) - required reauthentication since {Since}",
                     conn.Id, conn.Name, conn.RequiresReauthenticationSince);
             }
-            
+
             dbContext.ServerConnections.RemoveRange(staleConnections);
             await dbContext.SaveChangesAsync(cancellationToken);
-            
+
             _logger.LogWarning("Cleaned up {Count} stale connections requiring reauthentication", staleConnections.Count);
             return staleConnections.Count;
         }
@@ -480,7 +482,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
+
     public async Task UpdateConnectionStatusAsync(string connectionId, ConnectionStatus status, string? errorMessage)
     {
         await _lock.WaitAsync();
@@ -488,7 +490,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<MonitorDbContext>();
-            
+
             var connection = await dbContext.ServerConnections.FindAsync(connectionId);
             if (connection != null)
             {
@@ -507,11 +509,9 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _lock.Release();
         }
     }
-    
-    #endregion
 
-    #region Helpers
-    
+
+
     private string BuildConnectionString(AddConnectionRequest request)
     {
         var builder = new SqlConnectionStringBuilder
@@ -523,10 +523,10 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             ConnectTimeout = request.Timeout > 0 ? request.Timeout : 30,
             ApplicationName = "PbSqlServerMonitoring",
             Encrypt = SqlConnectionEncryptOption.Optional,
-            MaxPoolSize = 2, // Minimal pool for monitoring
+            MaxPoolSize = 2,
             MinPoolSize = 0
         };
-        
+
         if (!request.UseWindowsAuth)
         {
             builder.UserID = request.Username!;
@@ -534,10 +534,10 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         }
         return builder.ConnectionString;
     }
-    
+
     private string EncryptConnectionString(string connectionString) => _protector.Protect(connectionString);
     private string DecryptConnectionString(string encrypted) => _protector.Unprotect(encrypted);
-    
+
     private static ConnectionInfoResponse MapToResponse(ServerConnection connection) => new()
     {
         Id = connection.Id,
@@ -554,7 +554,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         Status = connection.Status,
         LastError = connection.LastError
     };
-    
+
     private static string GetFriendlyErrorMessage(SqlException ex)
     {
         return ex.Number switch
@@ -566,9 +566,9 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             _ => $"SQL Error {ex.Number}: {ex.Message}"
         };
     }
-    
-    #endregion
-    
+
+
+
     public void Dispose()
     {
         _lock.Dispose();

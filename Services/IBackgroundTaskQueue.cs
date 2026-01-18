@@ -13,7 +13,7 @@ public interface IBackgroundTaskQueue
     /// </summary>
     /// <param name="workItem">The async work item to execute</param>
     void QueueBackgroundWorkItem(Func<CancellationToken, Task> workItem);
-    
+
     /// <summary>
     /// Dequeues a work item for processing.
     /// </summary>
@@ -30,35 +30,34 @@ public sealed class BackgroundTaskQueue : IBackgroundTaskQueue
 {
     private readonly Channel<Func<CancellationToken, Task>> _queue;
     private readonly ILogger<BackgroundTaskQueue> _logger;
-    
+
     /// <summary>
     /// Maximum number of queued work items before blocking
     /// </summary>
     private const int MaxQueuedItems = 100;
-    
+
     public BackgroundTaskQueue(ILogger<BackgroundTaskQueue> logger)
     {
         _logger = logger;
-        
-        // Bounded channel with dropping behavior when full
+
         var options = new BoundedChannelOptions(MaxQueuedItems)
         {
             FullMode = BoundedChannelFullMode.Wait
         };
-        
+
         _queue = Channel.CreateBounded<Func<CancellationToken, Task>>(options);
     }
-    
+
     public void QueueBackgroundWorkItem(Func<CancellationToken, Task> workItem)
     {
         ArgumentNullException.ThrowIfNull(workItem);
-        
+
         if (!_queue.Writer.TryWrite(workItem))
         {
             _logger.LogWarning("Background task queue is full, work item dropped");
         }
     }
-    
+
     public async Task<Func<CancellationToken, Task>> DequeueAsync(CancellationToken cancellationToken)
     {
         return await _queue.Reader.ReadAsync(cancellationToken);
@@ -72,7 +71,7 @@ public sealed class BackgroundTaskQueueHostedService : BackgroundService
 {
     private readonly IBackgroundTaskQueue _taskQueue;
     private readonly ILogger<BackgroundTaskQueueHostedService> _logger;
-    
+
     public BackgroundTaskQueueHostedService(
         IBackgroundTaskQueue taskQueue,
         ILogger<BackgroundTaskQueueHostedService> logger)
@@ -80,24 +79,23 @@ public sealed class BackgroundTaskQueueHostedService : BackgroundService
         _taskQueue = taskQueue;
         _logger = logger;
     }
-    
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Background task queue service is starting");
-        
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
                 var workItem = await _taskQueue.DequeueAsync(stoppingToken);
-                
+
                 try
                 {
                     await workItem(stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected during shutdown
                 }
                 catch (Exception ex)
                 {
@@ -106,10 +104,9 @@ public sealed class BackgroundTaskQueueHostedService : BackgroundService
             }
             catch (OperationCanceledException)
             {
-                // Expected during shutdown
             }
         }
-        
+
         _logger.LogInformation("Background task queue service is stopping");
     }
 }

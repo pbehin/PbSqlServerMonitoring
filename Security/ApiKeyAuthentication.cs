@@ -8,7 +8,7 @@ namespace PbSqlServerMonitoring.Security;
 
 /// <summary>
 /// API Key authentication handler.
-/// 
+///
 /// Security Improvements:
 /// - API key read from environment variable only (never from config file)
 /// - Only accepts API key from header (removed query string support for security)
@@ -19,7 +19,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
     private const string ApiKeyHeaderName = "X-API-Key";
     private const string ApiKeyEnvVarConfigKey = "Security:ApiKeyEnvironmentVariable";
     private const string DefaultApiKeyEnvVar = "PB_MONITOR_API_KEY";
-    
+
     private readonly IConfiguration _configuration;
     private readonly ILogger<ApiKeyAuthenticationHandler> _logger;
 
@@ -36,23 +36,20 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        // Allow anonymous access in Development mode if configured
         var environment = Context.RequestServices.GetRequiredService<IWebHostEnvironment>();
         var allowAnonymousInDev = _configuration.GetValue<bool>("Security:AllowAnonymousInDevelopment", true);
-        
+
         if (environment.IsDevelopment() && allowAnonymousInDev)
         {
             return Task.FromResult(AuthenticateResult.Success(CreateTicket("Developer")));
         }
 
-        // Check if authentication is disabled globally
         var authEnabled = _configuration.GetValue<bool>("Security:EnableAuthentication", false);
         if (!authEnabled)
         {
             return Task.FromResult(AuthenticateResult.Success(CreateTicket("Anonymous")));
         }
 
-        // Only accept API key from header (not query string for security)
         if (!Request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeader))
         {
             return Task.FromResult(AuthenticateResult.Fail("API key is missing. Provide X-API-Key header."));
@@ -60,7 +57,6 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
 
         var providedApiKey = apiKeyHeader.ToString();
 
-        // Get API key from environment variable (never from config file)
         var envVarName = _configuration[ApiKeyEnvVarConfigKey] ?? DefaultApiKeyEnvVar;
         var validApiKey = Environment.GetEnvironmentVariable(envVarName);
 
@@ -72,13 +68,12 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
             return Task.FromResult(AuthenticateResult.Fail("Server configuration error: API key not configured"));
         }
 
-        // Use constant-time comparison to prevent timing attacks
         if (!CryptographicOperations.FixedTimeEquals(
             System.Text.Encoding.UTF8.GetBytes(providedApiKey),
             System.Text.Encoding.UTF8.GetBytes(validApiKey)))
         {
             _logger.LogWarning(
-                "Invalid API key attempt from {RemoteIp}", 
+                "Invalid API key attempt from {RemoteIp}",
                 Context.Connection.RemoteIpAddress);
             return Task.FromResult(AuthenticateResult.Fail("Invalid API key"));
         }
@@ -91,13 +86,13 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<ApiKeyAuthentic
         var claims = new[]
         {
             new Claim(ClaimTypes.Name, username),
-            new Claim(ClaimTypes.NameIdentifier, username), // Required for user-specific connection filtering
+            new Claim(ClaimTypes.NameIdentifier, username),
             new Claim(ClaimTypes.AuthenticationMethod, "ApiKey")
         };
-        
+
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
-        
+
         return new AuthenticationTicket(principal, Scheme.Name);
     }
 }

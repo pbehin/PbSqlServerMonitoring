@@ -1,6 +1,0 @@
-@PbSqlServerMonitoring_HostAddress = http://localhost:5188
-
-GET {{PbSqlServerMonitoring_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

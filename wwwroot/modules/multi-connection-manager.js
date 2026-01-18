@@ -1,7 +1,7 @@
 /**
  * Multi-Connection Manager Module
  * Handles multiple SQL Server connections with secure storage.
- * 
+ *
  * Features:
  * - Add/remove/test connections
  * - Connection status monitoring
@@ -19,7 +19,6 @@ const MultiConnectionManager = {
     async init() {
         this.bindEvents();
 
-        // Only load connections if user is authenticated
         if (this.isUserAuthenticated()) {
             await this.loadConnections();
         }
@@ -32,7 +31,6 @@ const MultiConnectionManager = {
      * Check if user is authenticated
      */
     isUserAuthenticated() {
-        // Check if auth manager exists and user is authenticated
         return window.authManager && window.authManager.isAuthenticated;
     },
 
@@ -40,12 +38,10 @@ const MultiConnectionManager = {
      * Bind event handlers for setup UI
      */
     bindEvents() {
-        // Add connection button
         document.getElementById('addConnectionBtn')?.addEventListener('click', () => {
             this.showAddConnectionModal();
         });
 
-        // Modal controls
         document.getElementById('closeAddConnectionModal')?.addEventListener('click', () => {
             this.hideAddConnectionModal();
         });
@@ -54,12 +50,10 @@ const MultiConnectionManager = {
             this.hideAddConnectionModal();
         });
 
-        // Save new connection
         document.getElementById('saveNewConnection')?.addEventListener('click', () => {
             this.saveNewConnection();
         });
 
-        // Windows Auth toggle in modal
         document.getElementById('newWindowsAuthCheck')?.addEventListener('change', (e) => {
             const sqlAuthFields = document.getElementById('newSqlAuthFields');
             if (e.target.checked) {
@@ -69,12 +63,10 @@ const MultiConnectionManager = {
             }
         });
 
-        // Close modal on overlay click
         document.querySelector('#addConnectionModal .modal-overlay')?.addEventListener('click', () => {
             this.hideAddConnectionModal();
         });
 
-        // Go to setup button (from setup required overlay)
         document.getElementById('goToSetupBtn')?.addEventListener('click', () => {
             if (window.app) {
                 window.app.navigateTo('setup');
@@ -97,9 +89,8 @@ const MultiConnectionManager = {
      * Load all connections from API with retry logic
      */
     async loadConnections(retryCount = 0) {
-        // Check authentication first
         if (!this.isUserAuthenticated()) {
-            console.log('Skipping connection loading: User not authenticated');
+
             return { connections: [], maxConnections: 5 };
         }
 
@@ -109,9 +100,8 @@ const MultiConnectionManager = {
             const response = await fetch('/api/connections');
 
             if (!response.ok) {
-                // Handle authentication errors
                 if (response.status === 401) {
-                    console.log('Connection loading failed: Not authenticated');
+
                     return { connections: [], maxConnections: 5 };
                 }
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -130,14 +120,12 @@ const MultiConnectionManager = {
         } catch (error) {
             console.error('Failed to load connections:', error);
 
-            // Retry on network errors (but not auth errors)
             if (retryCount < maxRetries && (error.message.includes('fetch') || error.message.includes('network'))) {
-                const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+                const delay = Math.pow(2, retryCount) * 1000;
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.loadConnections(retryCount + 1);
             }
 
-            // Show user-facing error after retries exhausted (but not for auth errors)
             if (!error.message.includes('401')) {
                 this.showError('Unable to load connections. Please check your network and try again.');
             }
@@ -153,13 +141,11 @@ const MultiConnectionManager = {
         const overlay = document.getElementById('setupRequiredOverlay');
 
         if (!hasConnections) {
-            // Show setup required overlay if not already present
             if (!overlay) {
                 this.showSetupRequiredOverlay();
             }
             return true;
         } else {
-            // Hide overlay if connections exist
             if (overlay) {
                 overlay.remove();
             }
@@ -171,7 +157,6 @@ const MultiConnectionManager = {
      * Show overlay requiring user to set up at least one connection
      */
     showSetupRequiredOverlay() {
-        // Don't show if already on setup page
         if (window.app?.currentSection === 'setup') {
             return;
         }
@@ -197,7 +182,6 @@ const MultiConnectionManager = {
 
         document.body.appendChild(overlay);
 
-        // Bind the button
         document.getElementById('goToSetupBtn')?.addEventListener('click', () => {
             if (window.app) {
                 window.app.navigateTo('setup');
@@ -228,14 +212,11 @@ const MultiConnectionManager = {
 
         grid.innerHTML = this.connections.map(conn => this.renderConnectionCard(conn)).join('');
 
-        // Bind action buttons
         this.connections.forEach(conn => {
-            // Click on card itself (not buttons) to select connection
             const card = document.querySelector(`.connection-card[data-connection-id="${conn.id}"]`);
             if (card && conn.isEnabled) {
                 card.style.cursor = 'pointer';
                 card.addEventListener('click', (e) => {
-                    // Don't trigger if clicking on a button
                     if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
                         return;
                     }
@@ -249,15 +230,28 @@ const MultiConnectionManager = {
                 if (window.app) {
                     window.app.setActiveConnection(conn.id);
                 }
-                // If not connected, force a test to reconnect immediately
                 if (conn.status !== 1) {
                     this.testConnection(conn.id);
                 }
             });
 
-            // Disconnect button - stops data collection for this connection
-            document.getElementById(`disconnect-${conn.id}`)?.addEventListener('click', () => {
-                this.disconnectConnection(conn.id);
+            document.getElementById(`disconnect-${conn.id}`)?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.app) {
+                    window.app.showConfirm('Disconnect', 'Stop monitoring this server?', () => {
+                        window.app.clearActiveConnection();
+                        this.disconnectConnection(conn.id);
+                    });
+                }
+            });
+
+            document.getElementById(`stop-${conn.id}`)?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.app) {
+                    window.app.showConfirm('Disconnect', 'Stop connection to this server?', () => {
+                        this.disconnectConnection(conn.id);
+                    });
+                }
             });
 
             document.getElementById(`test-${conn.id}`)?.addEventListener('click', () => {
@@ -286,20 +280,18 @@ const MultiConnectionManager = {
         const isActive = window.app && window.app.activeConnectionId === conn.id;
         const activeClass = isActive ? 'active-connection' : '';
 
-        // Button logic:
-        // - When connected: Show "Disconnect" button (to stop data collection)
-        // - When not connected: Show "Connect" button
-        // - When active: Show "Active" badge instead
         let connectBtn;
+        let stopBtn = '';
+
         if (isActive) {
-            connectBtn = `<button class="btn btn-success" disabled style="opacity: 1; cursor: default;">Active</button>`;
+            connectBtn = `<button class="btn btn-warning" id="disconnect-${conn.id}" title="Click to disconnect">Disconnect</button>`;
         } else if (isConnected) {
-            connectBtn = `<button class="btn btn-warning" id="disconnect-${conn.id}">Disconnect</button>`;
+            connectBtn = `<button class="btn btn-primary" id="connect-${conn.id}">Monitor</button>`;
+            stopBtn = `<button class="btn btn-warning btn-sm" id="stop-${conn.id}" title="Stop connection">Stop</button>`;
         } else {
             connectBtn = `<button class="btn btn-primary" id="connect-${conn.id}" ${!conn.isEnabled ? 'disabled' : ''}>Connect</button>`;
         }
 
-        // Test button: disabled when already connected
         const testBtnDisabled = isConnected ? 'disabled' : '';
         const testBtnStyle = isConnected ? 'opacity: 0.5; cursor: not-allowed;' : '';
 
@@ -315,7 +307,7 @@ const MultiConnectionManager = {
                         ${statusLabel}
                     </span>
                 </div>
-                
+
                 <div class="connection-details">
                     <div class="connection-detail">
                         <span class="connection-detail-label">Auth</span>
@@ -326,12 +318,13 @@ const MultiConnectionManager = {
                         <span class="connection-detail-value">${conn.lastSuccessfulConnection ? this.formatDate(conn.lastSuccessfulConnection) : 'Never'}</span>
                     </div>
                 </div>
-                
+
                 ${conn.lastError ? `<div class="connection-error">${this.escapeHtml(conn.lastError)}</div>` : ''}
-                
+
                 <div class="connection-actions">
                     ${connectBtn}
-                    <button class="btn btn-outline" id="test-${conn.id}" ${testBtnDisabled} style="${testBtnStyle}">
+                    ${stopBtn}
+                    <button id="test-${conn.id}" class="btn btn-secondary btn-sm btn-outline" style="${testBtnStyle}" ${testBtnDisabled}>
                         Test
                     </button>
                     <button class="btn btn-outline" id="toggle-${conn.id}">
@@ -354,7 +347,6 @@ const MultiConnectionManager = {
             badge.textContent = `${this.connections.length} / ${this.maxConnections} connections`;
         }
 
-        // Disable add button if at limit
         const addBtn = document.getElementById('addConnectionBtn');
         if (addBtn) {
             addBtn.disabled = this.connections.length >= this.maxConnections;
@@ -367,7 +359,6 @@ const MultiConnectionManager = {
     showAddConnectionModal() {
         const modal = document.getElementById('addConnectionModal');
         if (modal) {
-            // Reset form
             document.getElementById('addConnectionForm')?.reset();
             document.getElementById('addConnectionResult').style.display = 'none';
             document.getElementById('newSqlAuthFields').classList.remove('hidden');
@@ -395,7 +386,6 @@ const MultiConnectionManager = {
         const spinner = btn.querySelector('.loading');
         const resultDiv = document.getElementById('addConnectionResult');
 
-        // Gather form data
         const data = {
             name: document.getElementById('newConnectionName').value.trim(),
             server: document.getElementById('newServerInput').value.trim(),
@@ -407,7 +397,6 @@ const MultiConnectionManager = {
             timeout: parseInt(document.getElementById('newTimeoutInput').value) || 30
         };
 
-        // Validate
         if (!data.server) {
             this.showModalResult(false, 'Server name is required.');
             return;
@@ -418,7 +407,6 @@ const MultiConnectionManager = {
             return;
         }
 
-        // Show loading
         btnText.textContent = 'Testing...';
         spinner.style.display = 'inline-block';
         btn.disabled = true;
@@ -435,7 +423,6 @@ const MultiConnectionManager = {
             if (result.success) {
                 this.showModalResult(true, 'Connection added successfully!');
 
-                // Reload connections and close modal
                 await this.loadConnections();
 
                 setTimeout(() => {
@@ -482,7 +469,6 @@ const MultiConnectionManager = {
 
             const result = await response.json();
 
-            // Reload to get updated status
             await this.loadConnections();
 
         } catch (error) {
@@ -532,7 +518,6 @@ const MultiConnectionManager = {
                 this.showSuccess('Connection disconnected');
             }
 
-            // Reload to get updated status
             await this.loadConnections();
         } catch (error) {
             console.error('Failed to disconnect:', error);
@@ -544,20 +529,22 @@ const MultiConnectionManager = {
      * Remove a connection
      */
     async removeConnection(connectionId, connectionName) {
-        if (!confirm(`Are you sure you want to remove the connection "${connectionName}"?`)) {
-            return;
-        }
+        if (window.app) {
+            window.app.showConfirm('Remove Connection', `Are you sure you want to remove the connection "${connectionName}"?`, async () => {
+                try {
+                    const response = await fetch(`/api/connections/${connectionId}`, {
+                        method: 'DELETE'
+                    });
 
-        try {
-            const response = await fetch(`/api/connections/${connectionId}`, {
-                method: 'DELETE'
+                    await this.loadConnections();
+                } catch (error) {
+                    console.error('Failed to remove connection:', error);
+                }
             });
-
-            await this.loadConnections();
-        } catch (error) {
-            console.error('Failed to remove connection:', error);
         }
     },
+
+
 
     /**
      * Get CSS class for connection status
@@ -622,7 +609,6 @@ const MultiConnectionManager = {
      * Show a toast notification to the user
      */
     showToast(message, type = 'info', duration = 4000) {
-        // Remove existing toast if any
         const existing = document.querySelector('.toast-notification');
         if (existing) existing.remove();
 
@@ -633,7 +619,6 @@ const MultiConnectionManager = {
             <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
         `;
 
-        // Add styles if not already added
         if (!document.getElementById('toast-styles')) {
             const style = document.createElement('style');
             style.id = 'toast-styles';
@@ -676,7 +661,6 @@ const MultiConnectionManager = {
 
         document.body.appendChild(toast);
 
-        // Auto-remove after duration
         setTimeout(() => {
             if (toast.parentNode) {
                 toast.style.animation = 'slideIn 0.3s ease reverse';
@@ -700,5 +684,4 @@ const MultiConnectionManager = {
     }
 };
 
-// Export for use in app.js
 window.MultiConnectionManager = MultiConnectionManager;

@@ -4,7 +4,6 @@ class AuthManager {
         this.user = null;
         this.isAuthenticated = false;
 
-        // UI Elements
         this.modal = document.getElementById('authModal');
         this.form = document.getElementById('authForm');
         this.userProfile = document.getElementById('userProfile');
@@ -18,12 +17,10 @@ class AuthManager {
     async init() {
         this.bindEvents();
 
-        // Initialize UI state - ensure login mode is properly set (default)
         this.toggleMode(false);
 
         await this.checkSession();
 
-        // Check for OAuth errors in URL parameters
         this.checkOAuthError();
     }
 
@@ -33,37 +30,30 @@ class AuthManager {
         const emailConfirmed = urlParams.get('emailConfirmed');
 
         if (error) {
-            // Decode the error message
             const errorMessage = decodeURIComponent(error);
             this.showErrorDialog('Authentication Error', errorMessage);
-            // Clean URL
             window.history.replaceState({}, document.title, window.location.pathname);
         }
 
         if (emailConfirmed === 'true') {
             this.showSuccessDialog('Email Confirmed', 'Your email has been confirmed. You can now sign in.');
-            // Clean URL
             window.history.replaceState({}, document.title, window.location.pathname);
         }
     }
 
     bindEvents() {
-        // Tabs
         document.getElementById('tabLogin').addEventListener('click', () => this.toggleMode(false));
         document.getElementById('tabRegister').addEventListener('click', () => this.toggleMode(true));
 
-        // Form
         this.form.addEventListener('submit', async (e) => {
             e.preventDefault();
             await this.handleAuth();
         });
 
-        // Logout
         if (this.btnLogout) {
             this.btnLogout.addEventListener('click', async () => await this.logout());
         }
 
-        // Forgot Password
         const btnForgotPassword = document.getElementById('btnForgotPassword');
         if (btnForgotPassword) {
             btnForgotPassword.addEventListener('click', (e) => {
@@ -72,15 +62,12 @@ class AuthManager {
             });
         }
 
-        // Check for password reset from URL
         this.checkPasswordResetUrl();
 
-        // Handle password field sync and autofill detection
         const passwordField = document.getElementById('authPassword');
         const passwordConfirmVisible = document.getElementById('authPasswordConfirmVisible');
 
         if (passwordField && passwordConfirmVisible) {
-            // Sync on input (manual typing)
             const syncPasswords = () => {
                 if (this.isRegisterMode && passwordField.value && !passwordConfirmVisible.value) {
                     passwordConfirmVisible.value = passwordField.value;
@@ -90,15 +77,12 @@ class AuthManager {
             passwordField.addEventListener('input', syncPasswords);
             passwordField.addEventListener('change', syncPasswords);
 
-            // Detect password manager autofill (uses CSS animation trick)
-            // Password managers trigger this when they fill fields
             passwordField.addEventListener('animationstart', (e) => {
                 if (e.animationName === 'onAutoFillStart' || e.animationName.includes('autofill')) {
                     setTimeout(syncPasswords, 100);
                 }
             });
 
-            // Also check periodically for autofill (fallback)
             let lastPasswordValue = '';
             setInterval(() => {
                 if (this.isRegisterMode && passwordField.value !== lastPasswordValue) {
@@ -124,13 +108,11 @@ class AuthManager {
         const btnText = document.querySelector('#btnAuthAction .btn-text');
         if (btnText) btnText.textContent = isRegister ? 'Create Account' : 'Sign In';
 
-        // Hide forgot password form if visible
         const forgotPasswordFormContainer = document.getElementById('forgotPasswordFormContainer');
         if (forgotPasswordFormContainer) {
             forgotPasswordFormContainer.style.display = 'none';
         }
 
-        // Restore form visibility
         const authPasswordEl = document.getElementById('authPassword');
         const passwordFieldContainer = authPasswordEl ? authPasswordEl.closest('.auth-field') : null;
         const submitButton = document.getElementById('btnAuthAction');
@@ -139,7 +121,6 @@ class AuthManager {
         if (submitButton) submitButton.style.display = '';
         if (authForm) authForm.style.display = '';
 
-        // Toggle field visibility with CSS classes for better password manager detection
         const fullNameGroup = document.getElementById('groupFullName');
         const confirmPasswordGroup = document.getElementById('groupConfirmPassword');
 
@@ -151,35 +132,27 @@ class AuthManager {
             confirmPasswordGroup.classList.toggle('hidden-field', !isRegister);
         }
 
-        // Update password fields for autocomplete
         const passwordField = document.getElementById('authPassword');
         const passwordConfirmVisible = document.getElementById('authPasswordConfirmVisible');
 
         if (passwordField) {
-            // Keep new-password for register, use current-password for login
             passwordField.setAttribute('autocomplete', isRegister ? 'new-password' : 'current-password');
         }
 
-        // Update visible confirmation field
         if (passwordConfirmVisible) {
-            // Don't use disabled - it breaks password managers!
-            // Use tabindex to control keyboard navigation instead
             passwordConfirmVisible.value = '';
             passwordConfirmVisible.required = isRegister;
             passwordConfirmVisible.setAttribute('tabindex', isRegister ? '0' : '-1');
         }
 
-        // Show/hide forgot password link
         const forgotPasswordContainer = document.getElementById('forgotPasswordContainer');
         if (forgotPasswordContainer) {
             forgotPasswordContainer.style.display = isRegister ? 'none' : 'block';
         }
 
-        // Update form action hint for password managers
         const form = document.getElementById('authForm');
         if (form) {
             form.setAttribute('data-form-type', isRegister ? 'register' : 'login');
-            // Change action URL to help browsers detect form type
             form.setAttribute('action', isRegister ? '/api/auth/register' : '/api/auth/login');
         }
 
@@ -211,12 +184,10 @@ class AuthManager {
             if (this.userProfile) this.userProfile.style.display = 'flex';
             if (this.userNameDisplay) this.userNameDisplay.textContent = this.user.fullName || this.user.email;
 
-            // Load connections list after successful authentication
             if (window.MultiConnectionManager && window.MultiConnectionManager.isInitialized) {
                 window.MultiConnectionManager.loadConnectionsAfterAuth();
             }
 
-            // Load active connection after successful authentication
             if (window.app && typeof window.app.loadActiveConnection === 'function') {
                 window.app.loadActiveConnection();
             }
@@ -227,7 +198,6 @@ class AuthManager {
     }
 
     async handleAuth() {
-        // Don't process if forgot password form is visible
         const forgotPasswordFormContainer = document.getElementById('forgotPasswordFormContainer');
         if (forgotPasswordFormContainer && forgotPasswordFormContainer.style.display !== 'none') {
             return;
@@ -241,7 +211,6 @@ class AuthManager {
         this.errorDisplay.textContent = '';
         this.errorDisplay.style.display = 'none';
 
-        // Validate password confirmation in register mode
         if (this.isRegisterMode && password !== passwordConfirm) {
             this.showErrorDialog('Passwords Do Not Match', 'Please ensure both password fields are identical.');
             return;
@@ -262,13 +231,11 @@ class AuthManager {
             if (this.isRegisterMode) {
                 result = await this.api.post('/api/auth/register', { email, password, fullName });
 
-                // Handle successful registration that requires email confirmation
                 if (result.requiresEmailConfirmation) {
                     this.showSuccessDialog(
                         'Registration Successful',
                         'Please check your email to confirm your account before logging in.'
                     );
-                    // Switch to login mode
                     this.toggleMode(false);
                     return;
                 }
@@ -276,21 +243,18 @@ class AuthManager {
                 result = await this.api.post('/api/auth/login', { email, password });
             }
 
-            // Success
             await this.checkSession();
 
         } catch (error) {
             console.error('Authentication error:', error);
 
-            // Handle specific error cases
             if (error.requiresEmailConfirmation) {
                 this.showErrorDialog(
                     'Email Confirmation Required',
                     error.message || 'Please confirm your email before logging in.',
-                    true // Show resend confirmation link
+                    true
                 );
             } else if (error.details && Array.isArray(error.details)) {
-                // Multiple validation errors
                 const errorList = error.details.join('\n');
                 this.showErrorDialog('Registration Failed', errorList);
             } else {
@@ -312,17 +276,15 @@ class AuthManager {
             await this.api.post('/api/auth/logout', {});
             this.user = null;
             this.isAuthenticated = false;
-            window.location.reload(); // Clean state
+            window.location.reload();
         } catch (error) {
             console.error('Logout failed', error);
         }
     }
 
     showErrorDialog(title, message, showResendLink = false) {
-        // Clear any existing error
         this.errorDisplay.innerHTML = '';
 
-        // Create error content
         const titleEl = document.createElement('strong');
         titleEl.textContent = title;
         titleEl.style.display = 'block';
@@ -353,7 +315,6 @@ class AuthManager {
     }
 
     showSuccessDialog(title, message) {
-        // Temporarily use error display with success styling
         this.errorDisplay.innerHTML = '';
         this.errorDisplay.style.backgroundColor = '#d4edda';
         this.errorDisplay.style.color = '#155724';
@@ -371,7 +332,6 @@ class AuthManager {
         this.errorDisplay.appendChild(messageEl);
         this.errorDisplay.style.display = 'block';
 
-        // Reset to error styling after 5 seconds
         setTimeout(() => {
             this.errorDisplay.style.backgroundColor = '';
             this.errorDisplay.style.color = '';
@@ -395,18 +355,15 @@ class AuthManager {
     }
 
     showForgotPasswordDialog() {
-        // Update title
         document.getElementById('authTitle').textContent = 'Forgot Password?';
         const authSubtitle = document.getElementById('authSubtitle');
         if (authSubtitle) {
             authSubtitle.textContent = 'Enter your email to reset your password';
         }
 
-        // Hide tab switcher (Sign In/Register tabs) - redundant when showing forgot password
         const tabsWrapper = document.querySelector('.auth-tabs-wrapper');
         if (tabsWrapper) tabsWrapper.style.display = 'none';
 
-        // Hide login form fields individually
         const emailField = document.getElementById('authEmail')?.closest('.auth-field');
         const passwordField = document.getElementById('authPassword')?.closest('.auth-field');
         const confirmPasswordField = document.getElementById('groupConfirmPassword');
@@ -423,25 +380,21 @@ class AuthManager {
         if (submitButton) submitButton.style.display = 'none';
         if (authForm) authForm.style.display = 'none';
 
-        // Show forgot password form
         const forgotPasswordFormContainer = document.getElementById('forgotPasswordFormContainer');
         if (forgotPasswordFormContainer) {
             forgotPasswordFormContainer.style.display = 'block';
         }
 
-        // Pre-fill email if available
         const emailInput = document.getElementById('forgotPasswordEmail');
         const authEmail = document.getElementById('authEmail');
         if (emailInput && authEmail && authEmail.value) {
             emailInput.value = authEmail.value;
         }
 
-        // Focus email input
         setTimeout(() => {
             if (emailInput) emailInput.focus();
         }, 100);
 
-        // Bind events if not already bound
         const cancelBtn = document.getElementById('btnCancelForgotPassword');
         const submitBtn = document.getElementById('btnSubmitForgotPassword');
 
@@ -459,18 +412,15 @@ class AuthManager {
     }
 
     hideForgotPasswordForm() {
-        // Restore title
         document.getElementById('authTitle').textContent = 'Welcome Back';
         const authSubtitle = document.getElementById('authSubtitle');
         if (authSubtitle) {
             authSubtitle.textContent = 'Sign in to monitor your SQL servers';
         }
 
-        // Show tab switcher again
         const tabsWrapper = document.querySelector('.auth-tabs-wrapper');
         if (tabsWrapper) tabsWrapper.style.display = '';
 
-        // Show login form fields
         const emailField = document.getElementById('authEmail')?.closest('.auth-field');
         const passwordField = document.getElementById('authPassword')?.closest('.auth-field');
         const confirmPasswordField = document.getElementById('groupConfirmPassword');
@@ -481,7 +431,6 @@ class AuthManager {
 
         if (emailField) emailField.style.display = '';
         if (passwordField) passwordField.style.display = '';
-        // Show/hide fields based on mode
         if (confirmPasswordField) {
             confirmPasswordField.style.display = this.isRegisterMode ? '' : 'none';
         }
@@ -492,13 +441,11 @@ class AuthManager {
         if (submitButton) submitButton.style.display = '';
         if (authForm) authForm.style.display = '';
 
-        // Hide forgot password form
         const forgotPasswordFormContainer = document.getElementById('forgotPasswordFormContainer');
         if (forgotPasswordFormContainer) {
             forgotPasswordFormContainer.style.display = 'none';
         }
 
-        // Clear error/success messages
         this.errorDisplay.textContent = '';
         this.errorDisplay.style.display = 'none';
     }
@@ -516,14 +463,12 @@ class AuthManager {
             return;
         }
 
-        // Basic email validation
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             this.showErrorDialog('Error', 'Please enter a valid email address.');
             return;
         }
 
-        // Show loading state
         if (submitBtn) submitBtn.disabled = true;
         if (btnText) btnText.textContent = 'Sending...';
         if (btnLoader) btnLoader.style.display = 'block';
@@ -536,7 +481,6 @@ class AuthManager {
                 'If an account exists, a password reset email has been sent. Please check your inbox.'
             );
 
-            // Return to login form after 2 seconds
             setTimeout(() => {
                 this.hideForgotPasswordForm();
             }, 2000);
@@ -605,14 +549,12 @@ class AuthManager {
 
             if (userId && token) {
                 setTimeout(() => this.showResetPasswordForm(userId, token, expiresMinutes), 500);
-                // Clean URL
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         }
     }
 
     async showResetPasswordForm(userId, token, expiresMinutes) {
-        // Fetch user email to display for user confirmation
         let userEmail = '';
         try {
             const user = await this.api.get(`/api/auth/user/${userId}`);
@@ -620,8 +562,7 @@ class AuthManager {
                 userEmail = user.email;
             }
         } catch (error) {
-            // If we can't fetch email, that's okay - we'll just use userId
-            console.log('Could not fetch user email, using userId instead');
+
         }
 
         const expiryText = this.formatExpiryMinutes(expiresMinutes ?? 5);
@@ -631,22 +572,22 @@ class AuthManager {
                 <div style="background: white; border-radius: 12px; padding: 32px; max-width: 400px; width: 90%; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
                     <h2 style="margin: 0 0 24px 0; color: #1f2937; font-size: 24px;">Reset Password</h2>
                     <p style="color: #6b7280; font-size: 13px; margin: -12px 0 16px 0;">This reset link is valid for ${expiryText}.</p>
-                    
+
                     ${userEmail ? `<p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">Resetting password for: <strong style="color: #1f2937;">${userEmail.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]))}</strong></p>` : '<p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">Enter your new password below.</p>'}
-                    
+
                     <form id="resetPasswordForm" style="display: flex; flex-direction: column; gap: 16px;">
                         <div>
                             <label style="display: block; margin-bottom: 8px; color: #374151; font-weight: 500;">New Password</label>
                             <input type="password" id="resetPassword" placeholder="Enter new password" required autocomplete="new-password" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; box-sizing: border-box;">
                         </div>
-                        
+
                         <div>
                             <label style="display: block; margin-bottom: 8px; color: #374151; font-weight: 500;">Confirm Password</label>
                             <input type="password" id="resetPasswordConfirm" placeholder="Confirm new password" required autocomplete="new-password" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 16px; box-sizing: border-box;">
                         </div>
-                        
+
                         <div id="resetError" style="display: none; padding: 12px; background: #fee2e2; color: #991b1b; border-radius: 8px; font-size: 14px;"></div>
-                        
+
                         <div style="display: flex; gap: 12px;">
                             <button type="button" id="btnCancelReset" style="flex: 1; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; background: white; color: #374151; cursor: pointer; font-weight: 500;">Cancel</button>
                             <button type="submit" id="btnSubmitReset" style="flex: 1; padding: 10px; border: none; border-radius: 8px; background: #6366f1; color: white; cursor: pointer; font-weight: 500;">Reset Password</button>
@@ -697,22 +638,19 @@ class AuthManager {
                     'Password Reset Successful',
                     'Your password has been reset. Switching to login form - please sign in with your new password.'
                 );
-                // Switch to login mode so user can login
                 setTimeout(() => this.toggleMode(false), 2000);
             } catch (error) {
                 const errorMessage = error.message || 'Failed to reset password. The link may have expired.';
                 errorDiv.textContent = errorMessage;
                 errorDiv.style.display = 'block';
 
-                // Check if the error is related to token expiration
                 if (errorMessage.toLowerCase().includes('expired') || errorMessage.toLowerCase().includes('expire')) {
-                    // Return to login page after 1 minute
                     setTimeout(() => {
                         container.remove();
                         this.hideForgotPasswordForm();
                         this.toggleMode(false);
                         this.showSuccessDialog('Redirected to Login', 'The reset password link has expired. Please request a new password reset.');
-                    }, 60000); // 1 minute = 60,000 milliseconds
+                    }, 60000);
                 }
             }
         });

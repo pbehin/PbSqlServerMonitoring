@@ -7,7 +7,7 @@ namespace PbSqlServerMonitoring.Services;
 /// <summary>
 /// Provides resilience policies for database operations.
 /// Uses Polly for retry policies with exponential backoff.
-/// 
+///
 /// Transient SQL Server errors that can be retried:
 /// - -2: Timeout
 /// - 1205: Deadlock victim
@@ -24,21 +24,21 @@ public static class DatabaseResiliencePolicies
     /// <summary>
     /// SQL error codes that are considered transient and can be retried.
     /// </summary>
-    private static readonly int[] TransientSqlErrorCodes = 
+    private static readonly int[] TransientSqlErrorCodes =
     {
-        -2,     // Timeout
-        1205,   // Deadlock victim
-        49918,  // Cannot process request (Azure elastic pool)
-        49919,  // Rate limit exceeded (Azure)
-        49920,  // Service busy (Azure)
-        40197,  // Service encountered error
-        40501,  // Service busy
-        40613,  // Database not currently available
-        10053,  // Transport-level error (connection forcibly closed)
-        10054,  // Transport-level error (connection reset)
-        10060,  // Network timeout
-        40143,  // Connection could not be opened
-        64      // Named pipe error
+        -2,
+        1205,
+        49918,
+        49919,
+        49920,
+        40197,
+        40501,
+        40613,
+        10053,
+        10054,
+        10060,
+        40143,
+        64
     };
 
     /// <summary>
@@ -114,7 +114,6 @@ public static class DatabaseResiliencePolicies
     {
         if (ex == null) return false;
 
-        // Check each error in the exception
         foreach (SqlError error in ex.Errors)
         {
             if (TransientSqlErrorCodes.Contains(error.Number))

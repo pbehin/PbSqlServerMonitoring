@@ -1,0 +1,62 @@
+# SQL Server Alerting Rules
+groups:
+  - name: sql_server_alerts
+    rules:
+      # High CPU Usage
+      - alert: SQLServerHighCPU
+        expr: mssql_cpu_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQL Server High CPU Usage"
+          description: "SQL Server CPU usage is above 80% for more than 5 minutes (current: {{ $value }}%)"
+
+      # Low Page Life Expectancy
+      - alert: SQLServerLowPLE
+        expr: mssql_page_life_expectancy_seconds < 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQL Server Low Page Life Expectancy"
+          description: "Page Life Expectancy is below 300 seconds (current: {{ $value }}s). Consider adding more RAM."
+
+      # Low Buffer Cache Hit Ratio
+      - alert: SQLServerLowBufferCacheHitRatio
+        expr: mssql_buffer_cache_hit_ratio < 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQL Server Low Buffer Cache Hit Ratio"
+          description: "Buffer cache hit ratio is below 90% (current: {{ $value }}%). Consider adding more RAM."
+
+      # Deadlocks Detected
+      - alert: SQLServerDeadlocks
+        expr: increase(mssql_deadlocks_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQL Server Deadlocks Detected"
+          description: "Deadlocks have been detected in the last 5 minutes"
+
+      # High Connection Count
+      - alert: SQLServerHighConnections
+        expr: sum(mssql_connections_total) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQL Server High Connection Count"
+          description: "Total connections exceed 500 (current: {{ $value }})"
+
+      # SQL Exporter Down
+      - alert: SQLExporterDown
+        expr: up{job="sql_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SQL Exporter is Down"
+          description: "SQL Exporter has been unreachable for more than 1 minute"

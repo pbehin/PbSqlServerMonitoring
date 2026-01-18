@@ -8,7 +8,7 @@
     <meta name="description" content="Real-time SQL Server performance monitoring dashboard">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+
 </head>
 
 <body>
@@ -38,40 +38,7 @@
                     </svg>
                     <span>Dashboard</span>
                 </li>
-                <li class="nav-item requires-connection" data-section="running" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                            d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z" />
-                    </svg>
-                    <span>Running Queries</span>
-                </li>
-                <li class="nav-item requires-connection" data-section="queries" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                            d="M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z" />
-                    </svg>
-                    <span>Queries Performance</span>
-                </li>
-                <li class="nav-item requires-connection" data-section="indexes" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z" />
-                    </svg>
-                    <span>Missing Indexes</span>
-                </li>
-                <li class="nav-item requires-connection" data-section="blocking" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" />
-                    </svg>
-                    <span>Blocking Sessions</span>
-                </li>
-                <li class="nav-item requires-connection" data-section="locks" style="display: none;">
-                    <svg viewBox="0 0 24 24" fill="currentColor">
-                        <path
-                            d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
-                    </svg>
-                    <span>Lock Analysis</span>
-                </li>
+
             </ul>
             <div class="sidebar-footer">
                 <div class="user-profile" id="userProfile"
@@ -112,439 +79,30 @@
                         </svg>
                         Change Server
                     </button>
-                    <button class="btn btn-secondary" id="refreshBtn">
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                                d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
-                        </svg>
-                        Refresh
-                    </button>
-                    <span class="last-updated">Last updated: <span id="lastUpdated">-</span></span>
                 </div>
             </header>
 
-            <!-- Dashboard Section -->
+            <!-- Dashboard Section (Now Grafana) -->
             <section id="dashboard" class="content-section">
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-icon connections">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path
-                                    d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                            </svg>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="activeConnections">-</span>
-                            <span class="stat-label">Active Connections</span>
-                        </div>
+                <div class="grafana-container">
+                    <div class="grafana-loading" id="grafanaLoading">
+                        <div class="loading-spinner"></div>
+                        <span>Loading Dashboard...</span>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon blocked">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path
-                                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z" />
-                            </svg>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="blockedProcesses">-</span>
-                            <span class="stat-label">Blocked Processes</span>
-                        </div>
+                    <div class="grafana-error" id="grafanaError" style="display: none;">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                        </svg>
+                        <h3>Dashboard Unavailable</h3>
+                        <p>Could not load the dashboard. Please verify the connection.</p>
+                        <button class="btn btn-secondary" onclick="app.loadGrafanaDashboard()">Retry</button>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-icon cpu">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path
-                                    d="M15 9H9v6h6V9zm-2 4h-2v-2h2v2zm8-2V9h-2V7c0-1.1-.9-2-2-2h-2V3h-2v2h-2V3H9v2H7c-1.1 0-2 .9-2 2v2H3v2h2v2H3v2h2v2c0 1.1.9 2 2 2h2v2h2v-2h2v2h2v-2h2c1.1 0 2-.9 2-2v-2h2v-2h-2v-2h2zm-4 6H7V7h10v10z" />
-                            </svg>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="cpuUsage">-%</span>
-                            <span class="stat-label">CPU Usage</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-icon memory">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
-                                <path
-                                    d="M17 20H7V4h10m0-2H7c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-                            </svg>
-                        </div>
-                        <div class="stat-info">
-                            <span class="stat-value" id="memoryUsage">-</span>
-                            <span class="stat-label">Memory (MB)</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="server-info-card">
-                    <h3>Server Information</h3>
-                    <div class="server-details">
-                        <div class="detail-item">
-                            <span class="detail-label">Server Name</span>
-                            <span class="detail-value" id="serverName">-</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">SQL Server Version</span>
-                            <span class="detail-value" id="sqlVersion">-</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Edition</span>
-                            <span class="detail-value" id="edition">-</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Uptime</span>
-                            <span class="detail-value" id="uptime">-</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Buffer Cache Hit Ratio</span>
-                            <span class="detail-value" id="bufferHitRatio">-</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Performance Charts -->
-                <div class="charts-section">
-                    <div class="charts-header">
-                        <h3>Performance History</h3>
-                        <div class="time-range-controls">
-                            <div class="time-range-selector">
-                                <label>Time Range:</label>
-                                <select id="chartTimeRange">
-                                    <option value="10">Last 10 seconds</option>
-                                    <option value="30">Last 30 seconds</option>
-                                    <option value="60" selected>Last 1 minute</option>
-                                    <option value="300">Last 5 minutes</option>
-                                    <option value="900">Last 15 minutes</option>
-                                    <option value="1800">Last 30 minutes</option>
-                                    <option value="3600">Last 1 hour</option>
-                                    <option value="21600">Last 6 hours</option>
-                                    <option value="43200">Last 12 hours</option>
-                                    <option value="86400">Last 1 day</option>
-                                    <option value="172800">Last 2 days</option>
-                                    <option value="custom">Custom Range...</option>
-                                </select>
-                            </div>
-                            <div class="custom-range" id="customRangeInputs" style="display:none;">
-                                <input type="datetime-local" id="chartFromDate" title="From Date/Time">
-                                <span>to</span>
-                                <input type="datetime-local" id="chartToDate" title="To Date/Time">
-                                <button type="button" id="applyCustomRange" class="btn-small">Apply</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="charts-grid">
-                        <div class="chart-card">
-                            <h4>Connections & Blocking</h4>
-                            <canvas id="connectionsChart"></canvas>
-                        </div>
-                        <div class="chart-card">
-                            <h4>Memory Usage (MB)</h4>
-                            <canvas id="memoryChart"></canvas>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Overview Tables -->
-                <div class="overview-grid">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3>Top CPU Consuming Queries</h3>
-                            <a href="#" data-nav="queries" class="view-all">View All →</a>
-                        </div>
-                        <div class="card-body">
-                            <table class="data-table" id="topCpuTable">
-                                <thead>
-                                    <tr>
-                                        <th class="sortable" onclick="app.handleSort('topCpuTable', 'queryText')">Query
-                                            <span class="sort-icon"></span>
-                                        </th>
-                                        <th class="sortable" onclick="app.handleSort('topCpuTable', 'avgCpuTimeMs')">CPU
-                                            (ms) <span class="sort-icon"></span></th>
-                                        <th class="sortable" onclick="app.handleSort('topCpuTable', 'executionCount')">
-                                            Executions <span class="sort-icon"></span></th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="card">
-                        <div class="card-header">
-                            <h3>Active Blocking Chains</h3>
-                            <button class="btn btn-sm btn-outline" id="blockingHistoryBtn">History</button>
-                        </div>
-                        <div class="card-body">
-                            <table class="data-table" id="blockingTable">
-                                <thead>
-                                    <tr>
-                                        <th class="sortable" onclick="app.handleSort('blockingTable', 'sessionId')">
-                                            Session <span class="sort-icon"></span></th>
-                                        <th class="sortable"
-                                            onclick="app.handleSort('blockingTable', 'blockingSessionId')">Blocking
-                                            <span class="sort-icon"></span>
-                                        </th>
-                                        <th class="sortable" onclick="app.handleSort('blockingTable', 'waitTimeMs')">
-                                            Wait (ms) <span class="sort-icon"></span></th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
-                    </div>
+                    <iframe id="grafanaFrame" src="about:blank" frameborder="0"></iframe>
                 </div>
             </section>
-
-            <!-- Running Queries Section -->
-            <section id="running" class="content-section">
-                <div class="card full-width">
-                    <div class="card-header">
-                        <h3>Currently Running Queries</h3>
-                        <div class="header-badges">
-                            <span class="badge info" id="runningCount">0 Running</span>
-                            <span class="loading-indicator" id="runningLoading" style="display:none;">
-                                <span class="loading"></span>
-                            </span>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <table class="data-table full-table" id="runningTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'sessionId')">Session
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'databaseName')">
-                                        Database <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'status')">Status <span
-                                            class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'command')">Command
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'elapsedTimeMs')">
-                                        Elapsed (ms) <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'cpuTimeMs')">CPU (ms)
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'logicalReads')">Reads
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'waitType')">Wait Type
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'hostName')">Host <span
-                                            class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('runningTable', 'queryText')">Query
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Queries Performance Section -->
-            <section id="queries" class="content-section">
-                <div class="section-tabs">
-                    <button class="tab-btn active" data-tab="cpu">Top CPU</button>
-                    <button class="tab-btn" data-tab="io">Top I/O</button>
-                    <button class="tab-btn" data-tab="slowest">Slowest</button>
-                    <div class="history-range-selector" id="queryRangeSelector" style="margin-left: auto;">
-                        <label>Time Range:</label>
-                        <select id="queryHistoryRange">
-                            <option value="0.083">Last 5 minutes</option>
-                            <option value="0.167">Last 10 minutes</option>
-                            <option value="0.5">Last 30 minutes</option>
-                            <option value="1" selected>Last 1 hour</option>
-                            <option value="3">Last 3 hours</option>
-                            <option value="6">Last 6 hours</option>
-                            <option value="12">Last 12 hours</option>
-                            <option value="24">Last 24 hours</option>
-                            <option value="48">Last 2 days</option>
-                            <option value="168">Last 7 days</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="card full-width">
-                    <div class="card-body">
-                        <table class="data-table full-table" id="queriesTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'databaseName')">
-                                        Database <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'queryText')">Query
-                                        Text <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'executionCount')">
-                                        Executions <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'avgCpuTimeMs')">Avg
-                                        CPU (ms) <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'totalCpuTimeMs')">
-                                        Total CPU (ms) <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'avgLogicalReads')">Avg
-                                        Reads <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'avgLogicalWrites')">
-                                        Avg Writes <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'avgElapsedTimeMs')">
-                                        Avg Duration (ms) <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('queriesTable', 'lastExecutionTime')">
-                                        Last Run <span class="sort-icon"></span></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Missing Indexes Section -->
-            <section id="indexes" class="content-section">
-                <div class="card full-width">
-                    <div class="card-header">
-                        <h3>Missing Index Recommendations</h3>
-                        <span class="badge info">Sorted by Impact Score</span>
-                    </div>
-                    <div class="card-body">
-                        <table class="data-table full-table" id="indexesTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'databaseName')">
-                                        Database <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'tableName')">Table
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'improvementMeasure')">
-                                        Impact Score <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'userSeeks')">User
-                                        Seeks <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'avgUserImpact')">Avg
-                                        Impact % <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'equalityColumns')">
-                                        Equality Columns <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('indexesTable', 'inequalityColumns')">
-                                        Inequality Columns <span class="sort-icon"></span></th>
-                                    <th>Create Statement</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Blocking Sessions Section -->
-            <section id="blocking" class="content-section">
-                <div class="card full-width">
-                    <div class="card-header">
-                        <h3>Blocking Sessions (Historical)</h3>
-                        <div class="header-badges">
-                            <div class="history-range-selector" style="margin-right: 15px;">
-                                <label>Time Range:</label>
-                                <select id="blockingHistoryRange">
-                                    <option value="0.083">Last 5 minutes</option>
-                                    <option value="0.167">Last 10 minutes</option>
-                                    <option value="0.5">Last 30 minutes</option>
-                                    <option value="1" selected>Last 1 hour</option>
-                                    <option value="3">Last 3 hours</option>
-                                    <option value="6">Last 6 hours</option>
-                                    <option value="24">Last 24 hours</option>
-                                    <option value="48">Last 2 days</option>
-                                </select>
-                            </div>
-                            <span class="badge warning" id="blockingCount">0 Blocked</span>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <table class="data-table full-table" id="blockingFullTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'sessionId')">
-                                        Session ID <span class="sort-icon"></span></th>
-                                    <th class="sortable"
-                                        onclick="app.handleSort('blockingFullTable', 'blockingSessionId')">Blocking ID
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'status')">Status
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'waitType')">Wait
-                                        Type <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'waitTimeMs')">
-                                        Wait Time (ms) <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'databaseName')">
-                                        Database <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'hostName')">Host
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'loginName')">
-                                        Login <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('blockingFullTable', 'queryText')">
-                                        Query <span class="sort-icon"></span></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Lock Analysis Section -->
-            <section id="locks" class="content-section">
-                <div class="card full-width">
-                    <div class="card-header">
-                        <h3>Lock Analysis (Historical)</h3>
-                        <div class="history-range-selector">
-                            <label>Time Range:</label>
-                            <select id="locksHistoryRange">
-                                <option value="0.083">Last 5 minutes</option>
-                                <option value="0.167">Last 10 minutes</option>
-                                <option value="0.5">Last 30 minutes</option>
-                                <option value="1" selected>Last 1 hour</option>
-                                <option value="3">Last 3 hours</option>
-                                <option value="6">Last 6 hours</option>
-                                <option value="24">Last 24 hours</option>
-                                <option value="48">Last 2 days</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <table class="data-table full-table" id="locksTable">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'sessionId')">Session ID
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'databaseName')">Database
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'objectName')">Object
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'resourceType')">Resource
-                                        Type <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'requestMode')">Request
-                                        Mode <span class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'requestStatus')">Status
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'requestCount')">Count
-                                        <span class="sort-icon"></span>
-                                    </th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'hostName')">Host <span
-                                            class="sort-icon"></span></th>
-                                    <th class="sortable" onclick="app.handleSort('locksTable', 'loginName')">Login <span
-                                            class="sort-icon"></span></th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-                </div>
-            </section>
-
             <!-- Setup Section - Multi-Connection Management -->
-            <section id="setup" class="content-section">
+            <section id="setup" class="content-section active">
                 <div class="card full-width">
                     <div class="card-header">
                         <h3>SQL Server Connections</h3>
@@ -576,68 +134,6 @@
                 </div>
             </section>
         </main>
-    </div>
-
-    <!-- Query Detail Modal -->
-    <div class="modal" id="queryModal">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 1000px;">
-            <div class="modal-header">
-                <h3>Query Details</h3>
-                <button class="modal-close">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="query-section">
-                    <h4
-                        style="margin: 0 0 0.5rem 0; color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase;">
-                        Query Text</h4>
-                    <pre id="queryDetail"></pre>
-                </div>
-                <div id="executionPlanSection" class="execution-plan-section" style="display: none; margin-top: 1rem;">
-                    <h4
-                        style="margin: 0 0 0.5rem 0; color: var(--color-text-secondary); font-size: 0.75rem; text-transform: uppercase;">
-                        Execution Plan</h4>
-                    <div id="executionPlanContainer" style="max-height: 300px; overflow: auto;">
-                        <pre id="executionPlanDetail" style="font-size: 0.7rem; white-space: pre-wrap;"></pre>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer" style="gap: 0.5rem;">
-                <button class="btn btn-secondary" id="viewExecutionPlan" style="display: none;">View Execution
-                    Plan</button>
-                <button class="btn btn-primary" id="saveExecutionPlan" style="display: none;">Save Plan</button>
-                <button class="btn btn-secondary" id="copyQuery">Copy Query</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Blocking History Modal -->
-    <div class="modal" id="blockingHistoryModal">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="max-width: 900px;">
-            <div class="modal-header">
-                <h3>Blocking History (Past 48h)</h3>
-                <button class="modal-close blocking-history-close">&times;</button>
-            </div>
-            <div class="modal-body" style="overflow-y: auto; max-height: 60vh;">
-                <table class="data-table full-table" id="blockingHistoryTable">
-                    <thead>
-                        <tr>
-                            <th class="sortable" onclick="app.handleSort('blockingHistoryTable', 'time')">Time <span
-                                    class="sort-icon"></span></th>
-                            <th class="sortable" onclick="app.handleSort('blockingHistoryTable', 'blocked')">Blocked
-                                Session / Query <span class="sort-icon"></span></th>
-                            <th class="sortable" onclick="app.handleSort('blockingHistoryTable', 'blocker')">Blocker
-                                Session / Query <span class="sort-icon"></span></th>
-                            <th class="sortable" onclick="app.handleSort('blockingHistoryTable', 'wait')">Wait (ms)
-                                <span class="sort-icon"></span>
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -894,12 +390,29 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         CONFIRMATION MODAL
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="modal" id="confirmationModal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 id="confirmTitle">Confirm Action</h3>
+                <button class="modal-close" onclick="app.closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage" style="color: var(--text-secondary); margin-bottom: 20px;">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="app.closeModal()">Cancel</button>
+                <button type="button" class="btn btn-danger" id="btnConfirmAction">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript Modules -->
-    <script src="modules/utils.js?v=4"></script>
+
     <script src="modules/api-client.js?v=4"></script>
-    <script src="modules/chart-manager.js?v=4"></script>
-    <script src="modules/table-manager.js?v=4"></script>
-    <script src="modules/connection-manager.js?v=4"></script>
     <script src="modules/multi-connection-manager.js?v=4"></script>
     <script src="modules/auth-manager.js?v=5"></script>
     <script src="app.js?v=5"></script>
