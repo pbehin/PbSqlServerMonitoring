@@ -7,15 +7,15 @@ collector_files:
   - /etc/sql_exporter/mssql_standard.collector.yml
 
 jobs:
-  - job_name: conn_bf17fcd2d0824e19
+  - job_name: default
     collectors: [mssql_standard]
     static_configs:
       - targets:
-          Podman_Server: 'sqlserver://sa:StrongP%40ssw0rd%21@host.containers.internal:3341?database=master&encrypt=false&trustservercertificate=true&connection+timeout=30'
+          dummy: 'sqlserver://sa:dummy@dummy-host:1433'
         labels:
-          connection_id: 'bf17fcd2d0824e19'
-          connection_name: 'Podman Server'
-          server: '127.0.0.1, 3341'
+          connection_id: '0000000000000000'
+          connection_name: 'Default Dummy'
+          server: 'dummy-host'
           database: 'master'
-          user_id: '2a446840-e8ab-471b-a7fd-3c5e12973514'
+          user_id: 'system'
 

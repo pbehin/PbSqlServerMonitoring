@@ -8,11 +8,6 @@ services:
       - "9399:9399"
     volumes:
       - ./sql_exporter/sql_exporter.yml:/etc/sql_exporter/sql_exporter.yml:ro
-    environment:
-      # Internal API key for fetching connection strings from .NET app
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
-      # .NET app URL for fetching connection strings
-      - DOTNET_APP_URL=${DOTNET_APP_URL:-http://host.containers.internal:5000}
     command:
       - "--config.file=/etc/sql_exporter/sql_exporter.yml"
     restart: unless-stopped
@@ -35,6 +30,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
       - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"  # For internal cleanup, not exposed externally
     restart: unless-stopped
     networks:
       - monitoring

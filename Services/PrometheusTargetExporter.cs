@@ -1,10 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
 using System.Text;
-using System.Text.Json;
-using PbSqlServerMonitoring.Data;
 using PbSqlServerMonitoring.Models;
 
 namespace PbSqlServerMonitoring.Services;
@@ -14,13 +11,17 @@ public interface IPrometheusTargetExporter
     Task ExportTargetsAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Exports SQL Server connection targets to sql_exporter configuration.
+/// Automatically reloads sql_exporter when targets change.
+/// </summary>
 public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _configuration;
     private readonly ILogger<PrometheusTargetExporter> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _targetFilePath;
+    private readonly string _configFilePath;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public PrometheusTargetExporter(
@@ -34,9 +35,8 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         _logger = logger;
         _httpClientFactory = httpClientFactory;
 
-
-        _targetFilePath = configuration["Prometheus:TargetFilePath"]
-            ?? Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "monitoring", "prometheus", "targets.json");
+        _configFilePath = configuration["SqlExporter:ConfigPath"]
+            ?? Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "monitoring", "sql_exporter", "sql_exporter.yml");
 
         _logger.LogInformation("Prometheus Target Exporter initialized.");
     }
@@ -46,34 +46,16 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         await _writeLock.WaitAsync(cancellationToken);
         try
         {
-            var exportForDocker = _configuration.GetValue<bool>("Prometheus:ExportForDocker");
-            string outputPath = _targetFilePath;
-
-            if (exportForDocker)
-            {
-                var dir = Path.GetDirectoryName(_targetFilePath);
-                if (dir != null)
-                {
-                    outputPath = Path.Combine(dir, "..", "sql_exporter", "sql_exporter.yml");
-                }
-            }
-
             using var scope = _scopeFactory.CreateScope();
             var connectionService = scope.ServiceProvider.GetRequiredService<IMultiConnectionService>();
-            // Only export connections that are Enabled AND NOT Disconnected (Status != 2)
+            
+            // Only export connections that are Enabled AND NOT Disconnected
             var enabledConnections = connectionService.GetEnabledConnections()
                 .Where(c => c.Status != ConnectionStatus.Disconnected)
                 .ToList();
 
-            if (exportForDocker)
-            {
-                await ExportSqlExporterConfigAsync(enabledConnections, outputPath, connectionService, cancellationToken);
-                await ReloadSqlExporterAsync(cancellationToken);
-            }
-            else
-            {
-                await ExportPrometheusJsonAsync(enabledConnections, outputPath, connectionService, cancellationToken);
-            }
+            await WriteSqlExporterConfigAsync(enabledConnections, connectionService, cancellationToken);
+            await ReloadSqlExporterAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -85,9 +67,8 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         }
     }
 
-    private async Task ExportSqlExporterConfigAsync(
+    private async Task WriteSqlExporterConfigAsync(
         IReadOnlyList<ServerConnection> connections,
-        string outputPath,
         IMultiConnectionService connectionService,
         CancellationToken cancellationToken)
     {
@@ -104,30 +85,31 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
 
         if (!connections.Any())
         {
-             sb.AppendLine("  - job_name: default");
-             sb.AppendLine("    collectors: [mssql_standard]");
-             sb.AppendLine("    static_configs:");
-             sb.AppendLine("      - targets:");
-             var dummyConn = _configuration["Prometheus:DummyConnectionString"] ?? "sqlserver://sa:dummy@dummy-host:1433";
-             sb.AppendLine($"          dummy: '{dummyConn}'");
-             sb.AppendLine("        labels:");
-             sb.AppendLine("          connection_id: '0000000000000000'");
-             sb.AppendLine("          connection_name: 'Default Dummy'");
-             sb.AppendLine("          server: 'dummy-host'");
-             sb.AppendLine("          database: 'master'");
-             sb.AppendLine("          user_id: 'sa'");
-             sb.AppendLine();
+            // sql_exporter requires at least one job, use a dummy that won't connect
+            sb.AppendLine("  - job_name: default");
+            sb.AppendLine("    collectors: [mssql_standard]");
+            sb.AppendLine("    static_configs:");
+            sb.AppendLine("      - targets:");
+            var dummyConn = _configuration["SqlExporter:DummyConnectionString"] ?? "sqlserver://sa:dummy@dummy-host:1433";
+            sb.AppendLine($"          dummy: '{dummyConn}'");
+            sb.AppendLine("        labels:");
+            sb.AppendLine("          connection_id: '0000000000000000'");
+            sb.AppendLine("          connection_name: 'Default Dummy'");
+            sb.AppendLine("          server: 'dummy-host'");
+            sb.AppendLine("          database: 'master'");
+            sb.AppendLine("          user_id: 'system'");
+            sb.AppendLine();
         }
 
         foreach (var connection in connections)
         {
             var jobName = $"conn_{connection.Id.ToLowerInvariant()}";
+            var rawConn = connectionService.GetConnectionString(connection.Id);
 
             sb.AppendLine($"  - job_name: {jobName}");
             sb.AppendLine($"    collectors: [mssql_standard]");
             sb.AppendLine("    static_configs:");
             sb.AppendLine("      - targets:");
-            var rawConn = connectionService.GetConnectionString(connection.Id);
             sb.AppendLine($"          {connection.Name.Replace(" ", "_")}: '{FormatConnectionString(rawConn ?? "")}'");
             sb.AppendLine("        labels:");
             sb.AppendLine($"          connection_id: '{connection.Id}'");
@@ -138,14 +120,14 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
             sb.AppendLine();
         }
 
-        var directory = Path.GetDirectoryName(outputPath);
+        var directory = Path.GetDirectoryName(_configFilePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllTextAsync(outputPath, sb.ToString(), cancellationToken);
-        _logger.LogInformation("Exported {Count} targets to sql_exporter config at {Path}", connections.Count, outputPath);
+        await File.WriteAllTextAsync(_configFilePath, sb.ToString(), cancellationToken);
+        _logger.LogInformation("Exported {Count} targets to sql_exporter config at {Path}", connections.Count, _configFilePath);
     }
 
     private async Task ReloadSqlExporterAsync(CancellationToken cancellationToken)
@@ -153,8 +135,8 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         try
         {
             var client = _httpClientFactory.CreateClient();
-            var reloadUrl = _configuration.GetValue<string>("Prometheus:SqlExporterReloadUrl") 
-                ?? throw new InvalidOperationException("Prometheus:SqlExporterReloadUrl configuration is missing");
+            var reloadUrl = _configuration.GetValue<string>("SqlExporter:ReloadUrl") 
+                ?? throw new InvalidOperationException("SqlExporter:ReloadUrl configuration is missing");
             var response = await client.PostAsync(reloadUrl, null, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
@@ -171,73 +153,38 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         }
     }
 
-    private async Task ExportPrometheusJsonAsync(
-        IReadOnlyList<ServerConnection> connections,
-        string outputPath,
-        IMultiConnectionService connectionService,
-        CancellationToken cancellationToken)
-    {
-        var targets = connections
-            .Where(c => c.Status == ConnectionStatus.Connected || c.Status == ConnectionStatus.Unknown)
-            .Select(c => new
-            {
-                targets = new[] { c.Server },
-                labels = new Dictionary<string, string>
-                {
-                    ["connection_id"] = c.Id,
-                    ["connection_name"] = c.Name,
-                    ["user_id"] = c.UserId ?? "unknown",
-                    ["server"] = c.Server,
-                    ["database"] = c.Database,
-                    ["conn_string"] = FormatConnectionString(connectionService.GetConnectionString(c.Id) ?? "")
-                }
-            })
-            .ToList();
-
-        var json = JsonSerializer.Serialize(targets, new JsonSerializerOptions { WriteIndented = true });
-
-        var directory = Path.GetDirectoryName(outputPath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        await File.WriteAllTextAsync(outputPath, json, cancellationToken);
-        _logger.LogInformation("Exported {Count} targets to {Path}", targets.Count, outputPath);
-    }
-
+    /// <summary>
+    /// Formats a connection string as a sql_exporter URI.
+    /// Handles localhost -> host.containers.internal conversion for Docker.
+    /// </summary>
     private string FormatConnectionString(string connString)
     {
-        var exportForDocker = _configuration.GetValue<bool>("Prometheus:ExportForDocker");
-
-
         try
         {
             var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connString);
             var host = builder.DataSource;
             var port = "1433";
 
-            if (exportForDocker)
+            // Parse host:port or host,port
+            if (host.Contains(","))
             {
-                 if (host.Contains(","))
-                 {
-                     var parts = host.Split(',');
-                     host = parts[0].Trim();
-                     if (parts.Length > 1) port = parts[1].Trim();
-                 }
-                 else if (host.Contains(":"))
-                 {
-                     var parts = host.Split(':');
-                     host = parts[0].Trim();
-                     if (parts.Length > 1) port = parts[1].Trim();
-                 }
+                var parts = host.Split(',');
+                host = parts[0].Trim();
+                if (parts.Length > 1) port = parts[1].Trim();
+            }
+            else if (host.Contains(":"))
+            {
+                var parts = host.Split(':');
+                host = parts[0].Trim();
+                if (parts.Length > 1) port = parts[1].Trim();
+            }
 
-                 if (host.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) ||
-                     host.StartsWith("127.0.0.1") ||
-                     host == ".")
-                 {
-                     host = "host.containers.internal";
-                 }
+            // Convert localhost to Docker-accessible address
+            if (host.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) ||
+                host.StartsWith("127.0.0.1") ||
+                host == ".")
+            {
+                host = "host.containers.internal";
             }
 
             var user = Uri.EscapeDataString(builder.UserID);
@@ -257,7 +204,7 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         }
         catch
         {
-             return connString.Replace(",", ":");
+            return connString.Replace(",", ":");
         }
     }
 }

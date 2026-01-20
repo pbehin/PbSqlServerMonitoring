@@ -92,6 +92,7 @@ metrics:
         DB_NAME(database_id) as db_name,
         CAST(SUM(size) * 8. / 1024 AS DECIMAL(10,2)) as size_mb
       FROM sys.master_files
+      WHERE DB_NAME(database_id) NOT IN ('master', 'model', 'msdb')
       GROUP BY database_id
 
   - metric_name: mssql_wait_stats
@@ -128,3 +129,100 @@ metrics:
         'XE_DISPATCHER_JOIN', 'XE_DISPATCHER_WAIT', 'XE_TIMER_EVENT'
       )
       ORDER BY wait_time_ms DESC
+
+  # Running queries metric - shows currently executing queries
+  - metric_name: mssql_running_queries
+    type: gauge
+    help: 'Currently running queries count and details'
+    key_labels: [session_id, status, command, db_name]
+    value_label: metric
+    values: [cpu_time, logical_reads, elapsed_time, wait_time]
+    query: |
+      SELECT
+        CAST(session_id AS VARCHAR(10)) as session_id,
+        status,
+        command,
+        ISNULL(DB_NAME(database_id), 'N/A') as db_name,
+        cpu_time,
+        logical_reads,
+        total_elapsed_time as elapsed_time,
+        wait_time
+      FROM sys.dm_exec_requests WITH (NOLOCK)
+      WHERE session_id > 50
+        AND status != 'background'
+        AND command NOT IN ('AWAITING COMMAND', 'LAZY WRITER', 'CHECKPOINT SLEEP')
+        AND DB_NAME(database_id) NOT IN ('master', 'model', 'msdb')
+
+  # Blocking sessions metric - shows blocking chains when they exist
+  - metric_name: mssql_blocking_sessions
+    type: gauge
+    help: 'Blocking sessions with wait time'
+    key_labels: [blocked_session_id, blocking_session_id, wait_type, db_name]
+    values: [wait_time_seconds]
+    query: |
+      SELECT
+        CAST(blocked.session_id AS VARCHAR(10)) as blocked_session_id,
+        CAST(blocked.blocking_session_id AS VARCHAR(10)) as blocking_session_id,
+        ISNULL(blocked.wait_type, 'N/A') as wait_type,
+        ISNULL(DB_NAME(blocked.database_id), 'N/A') as db_name,
+        blocked.wait_time / 1000.0 as wait_time_seconds
+      FROM sys.dm_exec_requests blocked WITH (NOLOCK)
+      WHERE blocked.blocking_session_id > 0
+        AND DB_NAME(blocked.database_id) NOT IN ('master', 'model', 'msdb')
+
+  # Missing indexes metric - top 10 missing indexes by impact
+  - metric_name: mssql_missing_indexes
+    type: gauge
+    help: 'Missing indexes with improvement impact'
+    key_labels: [db_name, table_name, equality_columns, inequality_columns]
+    value_label: metric
+    values: [user_seeks, user_scans, avg_user_impact]
+    query: |
+      SELECT TOP 10
+        ISNULL(DB_NAME(d.database_id), 'N/A') as db_name,
+        ISNULL(OBJECT_NAME(d.object_id, d.database_id), 'N/A') as table_name,
+        ISNULL(d.equality_columns, 'N/A') as equality_columns,
+        ISNULL(d.inequality_columns, 'N/A') as inequality_columns,
+        gs.user_seeks,
+        gs.user_scans,
+        gs.avg_user_impact
+      FROM sys.dm_db_missing_index_details d WITH (NOLOCK)
+      JOIN sys.dm_db_missing_index_groups g WITH (NOLOCK) ON d.index_handle = g.index_handle
+      JOIN sys.dm_db_missing_index_group_stats gs WITH (NOLOCK) ON g.index_group_handle = gs.group_handle
+      WHERE d.database_id = DB_ID()
+      ORDER BY gs.avg_user_impact * (gs.user_seeks + gs.user_scans) DESC
+
+  # Top 10 queries by CPU - uses plan cache for lightweight access
+  - metric_name: mssql_top_cpu_queries
+    type: gauge
+    help: 'Top 10 queries by CPU consumption'
+    key_labels: [query_hash]
+    value_label: metric
+    values: [total_cpu_time_ms, avg_cpu_time_ms, execution_count, avg_logical_reads]
+    query: |
+      SELECT TOP 10
+        CONVERT(VARCHAR(64), qs.query_hash, 1) as query_hash,
+        qs.total_worker_time / 1000 as total_cpu_time_ms,
+        (qs.total_worker_time / NULLIF(qs.execution_count, 0)) / 1000 as avg_cpu_time_ms,
+        qs.execution_count,
+        qs.total_logical_reads / NULLIF(qs.execution_count, 0) as avg_logical_reads
+      FROM sys.dm_exec_query_stats qs WITH (NOLOCK)
+      ORDER BY qs.total_worker_time DESC
+
+  # Top 10 queries by I/O - uses plan cache for lightweight access
+  - metric_name: mssql_top_io_queries
+    type: gauge
+    help: 'Top 10 queries by I/O operations'
+    key_labels: [query_hash]
+    value_label: metric
+    values: [total_logical_reads, total_logical_writes, total_physical_reads, execution_count]
+    query: |
+      SELECT TOP 10
+        CONVERT(VARCHAR(64), qs.query_hash, 1) as query_hash,
+        qs.total_logical_reads,
+        qs.total_logical_writes,
+        qs.total_physical_reads,
+        qs.execution_count
+      FROM sys.dm_exec_query_stats qs WITH (NOLOCK)
+      ORDER BY (qs.total_logical_reads + qs.total_logical_writes) DESC
+

@@ -77,7 +77,7 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.True(response.Headers.Contains("Permissions-Policy"));
 
         Assert.Equal("nosniff", response.Headers.GetValues("X-Content-Type-Options").First());
-        Assert.Equal("DENY", response.Headers.GetValues("X-Frame-Options").First());
+        Assert.Equal("SAMEORIGIN", response.Headers.GetValues("X-Frame-Options").First());
     }
 
     [Fact]

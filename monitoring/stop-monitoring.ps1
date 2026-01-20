@@ -7,7 +7,7 @@ Write-Host "Stopping SQL Server Monitoring Stack..." -ForegroundColor Cyan
 Set-Location $PSScriptRoot
 
 # List of containers to stop/remove
-$containers = @("sql_exporter", "prometheus", "grafana", "sd_sidecar")
+$containers = @("sql_exporter", "prometheus", "grafana")
 
 foreach ($c in $containers) {
     Write-Host "Removing container '$c'..."

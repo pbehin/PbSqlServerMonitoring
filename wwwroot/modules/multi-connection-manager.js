@@ -54,6 +54,10 @@ const MultiConnectionManager = {
             this.saveNewConnection();
         });
 
+        document.getElementById('testNewConnection')?.addEventListener('click', () => {
+            this.testNewConnectionEntry();
+        });
+
         document.getElementById('newWindowsAuthCheck')?.addEventListener('change', (e) => {
             const sqlAuthFields = document.getElementById('newSqlAuthFields');
             if (e.target.checked) {
@@ -378,7 +382,7 @@ const MultiConnectionManager = {
     },
 
     /**
-     * Save a new connection
+     * Save a new connection (tests then adds)
      */
     async saveNewConnection() {
         const btn = document.getElementById('saveNewConnection');
@@ -386,28 +390,10 @@ const MultiConnectionManager = {
         const spinner = btn.querySelector('.loading');
         const resultDiv = document.getElementById('addConnectionResult');
 
-        const data = {
-            name: document.getElementById('newConnectionName').value.trim(),
-            server: document.getElementById('newServerInput').value.trim(),
-            database: document.getElementById('newDatabaseInput').value.trim() || 'master',
-            useWindowsAuth: document.getElementById('newWindowsAuthCheck').checked,
-            username: document.getElementById('newUsernameInput').value.trim(),
-            password: document.getElementById('newPasswordInput').value,
-            trustCertificate: document.getElementById('newTrustCertCheck').checked,
-            timeout: parseInt(document.getElementById('newTimeoutInput').value) || 30
-        };
+        const data = this.getConnectionFormData();
+        if (!data) return;
 
-        if (!data.server) {
-            this.showModalResult(false, 'Server name is required.');
-            return;
-        }
-
-        if (!data.useWindowsAuth && !data.username) {
-            this.showModalResult(false, 'Username is required for SQL Server authentication.');
-            return;
-        }
-
-        btnText.textContent = 'Testing...';
+        btnText.textContent = 'Adding...';
         spinner.style.display = 'inline-block';
         btn.disabled = true;
 
@@ -425,19 +411,90 @@ const MultiConnectionManager = {
 
                 await this.loadConnections();
 
+                // Keep button disabled until modal closes
+                btnText.textContent = 'Added ✓';
+                spinner.style.display = 'none';
+
                 setTimeout(() => {
                     this.hideAddConnectionModal();
                 }, 1500);
+                return; // Don't re-enable button
             } else {
                 this.showModalResult(false, result.message);
             }
         } catch (error) {
             this.showModalResult(false, 'Failed to add connection: ' + error.message);
         } finally {
-            btnText.textContent = 'Add & Test Connection';
+            btnText.textContent = 'Add';
             spinner.style.display = 'none';
             btn.disabled = false;
         }
+    },
+
+    /**
+     * Test a new connection without adding it
+     */
+    async testNewConnectionEntry() {
+        const btn = document.getElementById('testNewConnection');
+        const btnText = btn.querySelector('.btn-text');
+        const spinner = btn.querySelector('.loading');
+
+        const data = this.getConnectionFormData();
+        if (!data) return;
+
+        btnText.textContent = 'Testing...';
+        spinner.style.display = 'inline-block';
+        btn.disabled = true;
+
+        try {
+            const response = await fetch('/api/connections/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showModalResult(true, `Connection successful! Server: ${result.serverVersion || 'Connected'}`);
+            } else {
+                this.showModalResult(false, result.message);
+            }
+        } catch (error) {
+            this.showModalResult(false, 'Test failed: ' + error.message);
+        } finally {
+            btnText.textContent = 'Test';
+            spinner.style.display = 'none';
+            btn.disabled = false;
+        }
+    },
+
+    /**
+     * Get connection form data with validation
+     */
+    getConnectionFormData() {
+        const data = {
+            name: document.getElementById('newConnectionName').value.trim(),
+            server: document.getElementById('newServerInput').value.trim(),
+            database: document.getElementById('newDatabaseInput').value.trim() || 'master',
+            useWindowsAuth: document.getElementById('newWindowsAuthCheck').checked,
+            username: document.getElementById('newUsernameInput').value.trim(),
+            password: document.getElementById('newPasswordInput').value,
+            trustCertificate: document.getElementById('newTrustCertCheck').checked,
+            timeout: parseInt(document.getElementById('newTimeoutInput').value) || 30
+        };
+
+        if (!data.server) {
+            this.showModalResult(false, 'Server name is required.');
+            return null;
+        }
+
+        if (!data.useWindowsAuth && !data.username) {
+            this.showModalResult(false, 'Username is required for SQL Server authentication.');
+            return null;
+        }
+
+        return data;
     },
 
     /**
@@ -530,15 +587,31 @@ const MultiConnectionManager = {
      */
     async removeConnection(connectionId, connectionName) {
         if (window.app) {
-            window.app.showConfirm('Remove Connection', `Are you sure you want to remove the connection "${connectionName}"?`, async () => {
+            const warningMessage =
+                `⚠️ Are you sure you want to remove "${connectionName}"?\n\n` +
+                `This will permanently delete:\n` +
+                `• All historical metrics from Prometheus\n` +
+                `• Stored execution plans\n` +
+                `• Connection configuration\n\n` +
+                `This action cannot be undone.`;
+
+            window.app.showConfirm('Remove Connection', warningMessage, async () => {
                 try {
                     const response = await fetch(`/api/connections/${connectionId}`, {
                         method: 'DELETE'
                     });
 
+                    if (response.ok) {
+                        this.showSuccess('Connection and all related data removed');
+                    } else {
+                        const result = await response.json();
+                        this.showError(result.message || 'Failed to remove connection');
+                    }
+
                     await this.loadConnections();
                 } catch (error) {
                     console.error('Failed to remove connection:', error);
+                    this.showError('Failed to remove connection');
                 }
             });
         }

@@ -115,9 +115,7 @@ class SqlMonitorApp {
         });
     }
 
-    stopPolling() {
-        // Placeholder for polling cleanup if needed in future
-    }
+
 
     clearActiveConnection() {
         this.activeConnectionId = null;
@@ -168,7 +166,6 @@ class SqlMonitorApp {
 
         if (section === 'setup') {
             this.activeConnectionId = null;
-            this.stopPolling();
             this.hideConnectionMenus();
         }
 

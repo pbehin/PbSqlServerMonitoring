@@ -148,6 +148,11 @@ builder.Services.AddHostedService<BackgroundTaskQueueHostedService>();
 builder.Services.AddDbContext<MonitorDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("PbMonitorConnection")));
 
+// Execution plan configuration and service
+builder.Services.Configure<ExecutionPlanConfig>(
+    builder.Configuration.GetSection("ExecutionPlans"));
+builder.Services.AddScoped<IExecutionPlanService, ExecutionPlanService>();
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>

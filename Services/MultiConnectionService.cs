@@ -180,19 +180,86 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             var connection = await dbContext.ServerConnections.FindAsync([connectionId], cancellationToken);
             if (connection == null) return (false, "Connection not found.");
 
+            // 1. Delete execution plans for this connection (if table exists)
+            try
+            {
+                var deletedPlans = await dbContext.ExecutionPlans
+                    .Where(e => e.ConnectionId == connectionId)
+                    .ExecuteDeleteAsync(cancellationToken);
+                
+                if (deletedPlans > 0)
+                {
+                    _logger.LogInformation("Deleted {Count} execution plans for connection {ConnectionId}", deletedPlans, connectionId);
+                }
+            }
+            catch (Exception ex) when (ex.InnerException?.Message?.Contains("Invalid object name") == true ||
+                                       ex.Message.Contains("Invalid object name"))
+            {
+                // Table doesn't exist yet (migration not applied), skip deletion
+                _logger.LogDebug("ExecutionPlans table not found, skipping cleanup");
+            }
+
+            // 2. Remove connection from database
             dbContext.ServerConnections.Remove(connection);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation("Removed connection {ConnectionId}", connectionId);
 
+            // 3. Update Prometheus targets file
             try { await _prometheusExporter.ExportTargetsAsync(cancellationToken); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to update Prometheus targets"); }
 
-            return (true, "Connection removed successfully.");
+            // 4. Delete Prometheus time series for this connection (internal API call)
+            try 
+            { 
+                await DeletePrometheusSeriesAsync(connectionId, cancellationToken);
+            }
+            catch (Exception ex) 
+            { 
+                _logger.LogWarning(ex, "Failed to delete Prometheus series for {ConnectionId}. Series will expire per retention policy.", connectionId);
+            }
+
+            return (true, "Connection and all associated data removed successfully.");
         }
         finally
         {
             _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Deletes Prometheus time series for a specific connection.
+    /// Uses Prometheus Admin API (internal only, not exposed externally).
+    /// </summary>
+    private async Task DeletePrometheusSeriesAsync(string connectionId, CancellationToken cancellationToken = default)
+    {
+        // Prometheus container is accessible via internal network at prometheus:9090
+        // This is only accessible from within the container network, not externally
+        var prometheusUrl = _configuration.GetValue("Prometheus:InternalUrl", "http://localhost:9090");
+        
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        
+        // Delete series matching this connection_id label
+        var deleteUrl = $"{prometheusUrl}/api/v1/admin/tsdb/delete_series?match[]={{connection_id=\"{connectionId}\"}}";
+        
+        var response = await httpClient.PostAsync(deleteUrl, null, cancellationToken);
+        
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Deleted Prometheus series for connection_id={ConnectionId}", connectionId);
+            
+            // Optionally clean tombstones (can be slow, so we log but don't wait)
+            try
+            {
+                var cleanUrl = $"{prometheusUrl}/api/v1/admin/tsdb/clean_tombstones";
+                _ = httpClient.PostAsync(cleanUrl, null, CancellationToken.None);
+            }
+            catch { /* Fire and forget */ }
+        }
+        else
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning("Prometheus delete_series returned {StatusCode}: {Error}", response.StatusCode, error);
         }
     }
 

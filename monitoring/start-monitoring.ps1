@@ -29,3 +29,9 @@ else {
     Write-Host "Failed to start stack." -ForegroundColor Red
     exit $LASTEXITCODE
 }
+
+# 2. Run the .NET Application
+Write-Host "`nStarting .NET Application..." -ForegroundColor Cyan
+Set-Location $PSScriptRoot\..
+Write-Host "Application: http://localhost:5000"
+dotnet run

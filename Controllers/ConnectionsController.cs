@@ -134,6 +134,64 @@ public sealed class ConnectionsController : ControllerBase
     }
 
     /// <summary>
+    /// Tests a connection without saving it.
+    /// Use this to validate connection parameters before adding.
+    /// </summary>
+    /// <param name="request">Connection parameters to test</param>
+    /// <returns>Test result with server version if successful</returns>
+    [HttpPost("test")]
+    [EnableRateLimiting("connection-test")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> TestNewConnection([FromBody] AddConnectionRequest request)
+    {
+        if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request.Server))
+        {
+            return BadRequest(new { success = false, message = "Server name is required." });
+        }
+
+        // Build connection string from request (same logic as AddConnection but don't save)
+        var connectionString = BuildConnectionString(request);
+        var result = await _connectionService.TestConnectionAsync(connectionString);
+
+        if (!result.Success)
+        {
+            return Ok(new { success = false, message = result.Message });
+        }
+
+        return Ok(new 
+        { 
+            success = true, 
+            message = "Connection successful!",
+            serverVersion = result.ServerVersion
+        });
+    }
+
+    /// <summary>
+    /// Builds a connection string from request parameters with a short timeout for testing.
+    /// </summary>
+    private static string BuildConnectionString(AddConnectionRequest request)
+    {
+        var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder
+        {
+            DataSource = request.Server,
+            InitialCatalog = request.Database ?? "master",
+            IntegratedSecurity = request.UseWindowsAuth,
+            TrustServerCertificate = request.TrustCertificate,
+            ConnectTimeout = 10,  // Quick timeout for testing
+            ApplicationName = "PbSqlServerMonitoring"
+        };
+
+        if (!request.UseWindowsAuth)
+        {
+            builder.UserID = request.Username!;
+            builder.Password = request.Password;
+        }
+
+        return builder.ConnectionString;
+    }
+
+    /// <summary>
     /// Removes a connection.
     /// </summary>
     /// <param name="id">Connection ID to remove</param>

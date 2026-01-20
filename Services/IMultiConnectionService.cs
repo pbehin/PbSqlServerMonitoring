@@ -78,6 +78,14 @@ public interface IMultiConnectionService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Tests a connection using a raw connection string.
+    /// </summary>
+    /// <param name="connectionString">The connection string to test</param>
+    /// <returns>Success status, message, and server version if successful</returns>
+    Task<(bool Success, string Message, string? ServerVersion)> TestConnectionAsync(
+        string connectionString);
+
+    /// <summary>
     /// Tests all enabled connections.
     /// </summary>
     Task TestAllConnectionsAsync(CancellationToken cancellationToken = default);
