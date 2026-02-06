@@ -157,7 +157,7 @@ metrics:
   - metric_name: mssql_blocking_sessions
     type: gauge
     help: 'Blocking sessions with wait time'
-    key_labels: [blocked_session_id, blocking_session_id, wait_type, db_name]
+    key_labels: [blocked_session_id, blocking_session_id, wait_type, db_name, blocked_query, blocking_query, resource_type]
     values: [wait_time_seconds]
     query: |
       SELECT
@@ -165,8 +165,14 @@ metrics:
         CAST(blocked.blocking_session_id AS VARCHAR(10)) as blocking_session_id,
         ISNULL(blocked.wait_type, 'N/A') as wait_type,
         ISNULL(DB_NAME(blocked.database_id), 'N/A') as db_name,
+        ISNULL(LEFT(blocked_text.text, 100), 'N/A') as blocked_query,
+        ISNULL(LEFT(blocking_text.text, 100), 'N/A') as blocking_query,
+        ISNULL(blocked.wait_resource, 'N/A') as resource_type,
         blocked.wait_time / 1000.0 as wait_time_seconds
       FROM sys.dm_exec_requests blocked WITH (NOLOCK)
+      OUTER APPLY sys.dm_exec_sql_text(blocked.sql_handle) AS blocked_text
+      LEFT JOIN sys.dm_exec_requests blocking WITH (NOLOCK) ON blocked.blocking_session_id = blocking.session_id
+      OUTER APPLY sys.dm_exec_sql_text(blocking.sql_handle) AS blocking_text
       WHERE blocked.blocking_session_id > 0
         AND DB_NAME(blocked.database_id) NOT IN ('master', 'model', 'msdb')
 
@@ -193,7 +199,7 @@ metrics:
       WHERE DB_NAME(d.database_id) NOT IN ('master', 'model', 'msdb', 'tempdb')
       ORDER BY gs.avg_user_impact * (gs.user_seeks + gs.user_scans) DESC
 
-  # Top 10 queries by CPU - uses plan cache for lightweight access
+  # Top 10 queries by CPU - optimized to pre-filter before getting text
   - metric_name: mssql_top_cpu_queries
     type: gauge
     help: 'Top 10 queries by CPU consumption'
@@ -201,18 +207,29 @@ metrics:
     value_label: metric
     values: [total_cpu_time_ms, avg_cpu_time_ms, execution_count, avg_logical_reads]
     query: |
-      SELECT TOP 10
-        CONVERT(VARCHAR(64), qs.query_hash, 1) as query_hash,
+      ;WITH top_queries AS (
+        SELECT TOP 10
+          query_hash,
+          MAX(sql_handle) as sql_handle,
+          SUM(total_worker_time) / 1000 as total_cpu_time_ms,
+          SUM(total_worker_time) / NULLIF(SUM(execution_count), 0) / 1000 as avg_cpu_time_ms,
+          SUM(execution_count) as execution_count,
+          SUM(total_logical_reads) / NULLIF(SUM(execution_count), 0) as avg_logical_reads
+        FROM sys.dm_exec_query_stats WITH (NOLOCK)
+        WHERE query_hash <> 0x00
+        GROUP BY query_hash
+        ORDER BY SUM(total_worker_time) DESC
+      )
+      SELECT
+        CONVERT(VARCHAR(64), tq.query_hash, 1) as query_hash,
         REPLACE(REPLACE(LEFT(ISNULL(t.text, 'N/A'), 200), CHAR(13), ' '), CHAR(10), ' ') as query_text,
-        qs.total_worker_time / 1000 as total_cpu_time_ms,
-        (qs.total_worker_time / NULLIF(qs.execution_count, 0)) / 1000 as avg_cpu_time_ms,
-        qs.execution_count,
-        qs.total_logical_reads / NULLIF(qs.execution_count, 0) as avg_logical_reads
-      FROM sys.dm_exec_query_stats qs WITH (NOLOCK)
-      CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) t
-      ORDER BY qs.total_worker_time DESC
+        tq.total_cpu_time_ms, tq.avg_cpu_time_ms, tq.execution_count, tq.avg_logical_reads
+      FROM top_queries tq
+      CROSS APPLY sys.dm_exec_sql_text(tq.sql_handle) t
+      ORDER BY tq.total_cpu_time_ms DESC
+      OPTION (MAXDOP 1)
 
-  # Top 10 queries by I/O - uses plan cache for lightweight access
+  # Top 10 queries by I/O - optimized to pre-filter before getting text
   - metric_name: mssql_top_io_queries
     type: gauge
     help: 'Top 10 queries by I/O operations'
@@ -220,12 +237,24 @@ metrics:
     value_label: metric
     values: [total_logical_reads, total_logical_writes, total_physical_reads, execution_count]
     query: |
-      SELECT TOP 10
-        CONVERT(VARCHAR(64), qs.query_hash, 1) as query_hash,
+      ;WITH top_queries AS (
+        SELECT TOP 10
+          query_hash,
+          MAX(sql_handle) as sql_handle,
+          SUM(total_logical_reads) as total_logical_reads,
+          SUM(total_logical_writes) as total_logical_writes,
+          SUM(total_physical_reads) as total_physical_reads,
+          SUM(execution_count) as execution_count
+        FROM sys.dm_exec_query_stats WITH (NOLOCK)
+        WHERE query_hash <> 0x00
+        GROUP BY query_hash
+        ORDER BY SUM(total_logical_reads) DESC
+      )
+      SELECT
+        CONVERT(VARCHAR(64), tq.query_hash, 1) as query_hash,
         REPLACE(REPLACE(LEFT(ISNULL(t.text, 'N/A'), 200), CHAR(13), ' '), CHAR(10), ' ') as query_text,
-        qs.total_logical_reads,
-        qs.total_logical_writes,
-        qs.total_physical_reads,
-        qs.execution_count
-      FROM sys.dm_exec_query_stats qs WITH (NOLOCK)
-      CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) t
+        tq.total_logical_reads, tq.total_logical_writes, tq.total_physical_reads, tq.execution_count
+      FROM top_queries tq
+      CROSS APPLY sys.dm_exec_sql_text(tq.sql_handle) t
+      ORDER BY tq.total_logical_reads DESC
+      OPTION (MAXDOP 1)
