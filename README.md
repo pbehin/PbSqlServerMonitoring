@@ -88,7 +88,7 @@ You can configure the SQL Server connection through the web UI (Settings page) o
 ```json
 {
   "ConnectionStrings": {
-    "PbMonitorConnection": "Server=(localdb)\\mssqllocaldb;Database=PbMonitorDB;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true",
+    "PbMonitorConnection": "Server=.;Database=PbMonitorDB;Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=true",
     "SqlServer": "Server=YOUR_SERVER;Database=YOUR_DATABASE;User Id=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;"
   },
   "AllowedOrigins": [

@@ -70,7 +70,7 @@ public static class MetricsConstants
     public const int MemoryRetentionMinutes = 15;
 
     /// <summary>Maximum pending save queue size</summary>
-    public const int MaxPendingSaveQueue = 5000;
+    public const int MaxPendingSaveQueue = 8701;
 
     /// <summary>Default data retention in days</summary>
     public const int DefaultRetentionDays = 7;

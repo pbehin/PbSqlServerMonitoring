@@ -23,7 +23,7 @@ namespace PbSqlServerMonitoring.Controllers;
 /// - Connection strings encrypted at rest
 /// </summary>
 [ApiController]
-[Authorize]
+[Authorize(AuthenticationSchemes = "Identity.Application,ApiKey")]
 [Route("api/[controller]")]
 public sealed class ConnectionsController : ControllerBase
 {

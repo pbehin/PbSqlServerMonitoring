@@ -14,7 +14,7 @@ public class MonitorDbContextFactory : IDesignTimeDbContextFactory<MonitorDbCont
         var optionsBuilder = new DbContextOptionsBuilder<MonitorDbContext>();
 
         optionsBuilder.UseSqlServer(
-            "Server=(localdb)\\mssqllocaldb;Database=PbMonitor_Migrations;Trusted_Connection=True;");
+            "Server=.;Database=PbMonitor_Migrations;Trusted_Connection=True;");
 
         return new MonitorDbContext(optionsBuilder.Options);
     }

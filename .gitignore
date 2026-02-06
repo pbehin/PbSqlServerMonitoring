@@ -86,3 +86,4 @@ TestResults/
 Data/connections.encrypted.json
 
 Data/keys/
+monitoring/sql_exporter/sql_exporter.yml
