@@ -295,7 +295,7 @@
             "type": "stat"
         },
         {
-            "collapsed": false,
+            "collapsed": true,
             "gridPos": {
                 "h": 1,
                 "w": 24,
@@ -438,6 +438,8 @@
                             "mode": "off"
                         }
                     },
+                    "decimals": 1,
+                    "min": 0,
                     "mappings": [],
                     "thresholds": {
                         "mode": "absolute",
@@ -548,7 +550,7 @@
                             }
                         ]
                     },
-                    "unit": "short"
+                    "unit": "reqps"
                 },
                 "overrides": []
             },
@@ -586,7 +588,8 @@
                     "refId": "A"
                 }
             ],
-            "title": "Batch Requests Rate",
+            "title": "Batch Requests/sec",
+            "description": "Number of SQL batch requests processed per second. High values indicate heavy workload.\n\n[Microsoft Docs: Batch Requests/sec](https://learn.microsoft.com/sql/relational-databases/performance-monitor/sql-server-sql-statistics-object)",
             "type": "timeseries"
         },
         {
@@ -639,7 +642,7 @@
                             }
                         ]
                     },
-                    "unit": "short"
+                    "unit": "none"
                 },
                 "overrides": []
             },
@@ -673,15 +676,16 @@
                         "uid": "prometheus"
                     },
                     "expr": "mssql_connections",
-                    "legendFormat": "{{ database_name }}",
+                    "legendFormat": "{{connection_name}} - {{database}}",
                     "refId": "A"
                 }
             ],
-            "title": "Connections by Database",
+            "title": "Active Connections (count)",
+            "description": "Number of active user connections per database.",
             "type": "timeseries"
         },
         {
-            "collapsed": false,
+            "collapsed": true,
             "gridPos": {
                 "h": 1,
                 "w": 24,
@@ -764,6 +768,7 @@
                 }
             ],
             "title": "Database Sizes",
+            "description": "Total allocated size of data and log files in MB. Excludes system databases.\\n\\n[Microsoft Docs: sys.master_files](https://learn.microsoft.com/sql/relational-databases/system-catalog-views/sys-master-files-transact-sql)",
             "transformations": [
                 {
                     "id": "organize",
@@ -771,11 +776,19 @@
                         "excludeByName": {
                             "Time": true,
                             "__name__": true,
+                            "connection_id": true,
+                            "connection_name": true,
+                            "database": true,
+                            "exported_job": true,
+                            "exporter_name": true,
                             "instance": true,
-                            "job": true
+                            "job": true,
+                            "server": true,
+                            "target": true,
+                            "user_id": true
                         },
                         "renameByName": {
-                            "Value": "Size",
+                            "Value": "Size (MB)",
                             "db_name": "Database"
                         }
                     }
@@ -833,7 +846,8 @@
                             }
                         ]
                     },
-                    "unit": "ms"
+                    "unit": "none",
+                    "decimals": 1
                 },
                 "overrides": []
             },
@@ -846,9 +860,9 @@
             "id": 10,
             "options": {
                 "legend": {
-                    "calcs": [],
-                    "displayMode": "list",
-                    "placement": "bottom",
+                    "calcs": ["mean"],
+                    "displayMode": "table",
+                    "placement": "right",
                     "showLegend": true
                 },
                 "tooltip": {
@@ -863,16 +877,17 @@
                         "type": "prometheus",
                         "uid": "prometheus"
                     },
-                    "expr": "topk(10, mssql_wait_stats{measure=\"wait_time_ms\"})",
+                    "expr": "topk(10, rate(mssql_wait_stats{measure=\"wait_time_ms\"}[5m]) / 1000)",
                     "legendFormat": "{{ wait_type }}",
                     "refId": "A"
                 }
             ],
-            "title": "Top Wait Types",
+            "title": "Top Wait Types (sec/sec)",
+            "description": "Wait seconds per second - how much time threads spend waiting. Value of 1 = one thread always waiting. Value > CPU count indicates severe bottleneck.\\n\\nCommon waits: CXPACKET (parallelism), PAGEIOLATCH (disk I/O), LCK (locking).\\n\\n[Microsoft Docs: Wait Types](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-os-wait-stats-transact-sql)",
             "type": "timeseries"
         },
         {
-            "collapsed": false,
+            "collapsed": true,
             "gridPos": {
                 "h": 1,
                 "w": 24,
@@ -1140,7 +1155,7 @@
                 "sortBy": [
                     {
                         "desc": true,
-                        "displayName": "Total CPU (ms)"
+                        "displayName": "Total CPU Time"
                     }
                 ]
             },
@@ -1158,6 +1173,7 @@
                 }
             ],
             "title": "Top 10 CPU Queries",
+            "description": "Total CPU Time in milliseconds spent executing query. Cumulative since query plan was cached.\n\n[Microsoft Docs: dm_exec_query_stats](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-query-stats-transact-sql)",
             "transformations": [
                 {
                     "id": "organize",
@@ -1165,13 +1181,22 @@
                         "excludeByName": {
                             "Time": true,
                             "__name__": true,
+                            "connection_id": true,
+                            "connection_name": true,
+                            "database": true,
+                            "exported_job": true,
+                            "exporter_name": true,
                             "instance": true,
                             "job": true,
-                            "metric": true
+                            "metric": true,
+                            "query_hash": true,
+                            "server": true,
+                            "target": true,
+                            "user_id": true
                         },
                         "renameByName": {
-                            "Value": "Total CPU (ms)",
-                            "query_hash": "Query Hash"
+                            "Value": "Total CPU Time",
+                            "query_text": "Query Text"
                         }
                     }
                 }
@@ -1248,6 +1273,7 @@
                 }
             ],
             "title": "Top 10 I/O Queries",
+            "description": "Total I/O = Logical Reads (8KB pages read from buffer cache/memory). Cumulative since query plan was cached.\\n\\n25 million reads ≈ 200GB data scanned.\\n\\n[Microsoft Docs: dm_exec_query_stats](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-query-stats-transact-sql)",
             "transformations": [
                 {
                     "id": "organize",
@@ -1255,13 +1281,22 @@
                         "excludeByName": {
                             "Time": true,
                             "__name__": true,
+                            "connection_id": true,
+                            "connection_name": true,
+                            "database": true,
+                            "exported_job": true,
+                            "exporter_name": true,
                             "instance": true,
                             "job": true,
-                            "metric": true
+                            "metric": true,
+                            "query_hash": true,
+                            "server": true,
+                            "target": true,
+                            "user_id": true
                         },
                         "renameByName": {
                             "Value": "Total I/O",
-                            "query_hash": "Query Hash"
+                            "query_text": "Query Text"
                         }
                     }
                 }
@@ -1338,6 +1373,7 @@
                 }
             ],
             "title": "Missing Indexes Details",
+            "description": "Impact % = Estimated query performance improvement if index existed.\n\nEquality/Inequality columns should be index keys, Include columns in INCLUDE clause.\n\n[Microsoft Docs: dm_db_missing_index_details](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-db-missing-index-details-transact-sql)",
             "transformations": [
                 {
                     "id": "organize",
@@ -1345,16 +1381,25 @@
                         "excludeByName": {
                             "Time": true,
                             "__name__": true,
+                            "connection_id": true,
+                            "connection_name": true,
+                            "database": true,
+                            "exported_job": true,
+                            "exporter_name": true,
                             "instance": true,
                             "job": true,
-                            "metric": true
+                            "metric": true,
+                            "server": true,
+                            "target": true,
+                            "user_id": true
                         },
                         "renameByName": {
                             "Value": "Impact %",
                             "db_name": "Database",
                             "table_name": "Table",
                             "equality_columns": "Equality Columns",
-                            "inequality_columns": "Inequality Columns"
+                            "inequality_columns": "Inequality Columns",
+                            "include_columns": "Include Columns"
                         }
                     }
                 }
