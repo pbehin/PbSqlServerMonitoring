@@ -108,52 +108,8 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
             var jobName = $"conn_{connection.Id.ToLowerInvariant()}";
             var rawConn = connectionService.GetConnectionString(connection.Id);
             
-            // Rewrite connection string if TrustServerCertificate is true (proxy candidate)
+            // Use original connection string directly (no proxy)
             var effectiveConnString = rawConn;
-            try 
-            {
-               var builder = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(rawConn);
-               if (builder.TrustServerCertificate)
-               {
-                   _logger.LogInformation("Connection '{Name}' uses independent certificate trust. Registering via TLS Proxy.", connection.Name);
-                   
-                   // Extract Host/Port
-                   var host = builder.DataSource;
-                   int port = 1433;
-
-                   if (host.Contains(","))
-                   {
-                       var parts = host.Split(',');
-                       host = parts[0].Trim();
-                       if (int.TryParse(parts[1], out var p)) port = p;
-                   }
-                   else if (host.Contains(":"))
-                   {
-                       var parts = host.Split(':');
-                       host = parts[0].Trim();
-                       if (int.TryParse(parts[1], out var p)) port = p;
-                   }
-
-                   // Register with Proxy API
-                   var proxyPort = await RegisterProxyTargetAsync(host, port, cancellationToken);
-                   
-                   if (proxyPort.HasValue)
-                   {
-                        builder.DataSource = $"sql_proxy,{proxyPort.Value}"; 
-                        builder.TrustServerCertificate = true;
-                        builder.Encrypt = true;
-                        effectiveConnString = builder.ConnectionString;
-                   }
-                   else
-                   {
-                       _logger.LogWarning("Failed to register proxy for connection '{Name}'. Falling back to direct.", connection.Name);
-                   }
-               }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to parse connection string for proxy check. Using original.");
-            }
 
             sb.AppendLine($"  - job_name: {jobName}");
             sb.AppendLine($"    collectors: [mssql_standard]");
@@ -202,36 +158,6 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
         }
     }
 
-    private async Task<int?> RegisterProxyTargetAsync(string targetHost, int targetPort, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            var proxyUrl = _configuration.GetValue<string>("SqlExporter:ProxyManagementUrl") ?? "http://localhost:8085";
-            
-            var payload = new { targetHost, targetPort };
-            var content = new StringContent(
-                System.Text.Json.JsonSerializer.Serialize(payload), 
-                Encoding.UTF8, 
-                "application/json");
-
-            var response = await client.PostAsync($"{proxyUrl}/register", content, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("port", out var portProp))
-            {
-                return portProp.GetInt32();
-            }
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to register target {Host}:{Port} with proxy", targetHost, targetPort);
-            return null;
-        }
-    }
 
     private string FormatConnectionString(string connString)
     {
@@ -267,10 +193,16 @@ public sealed class PrometheusTargetExporter : IPrometheusTargetExporter
 
             var uri = $"sqlserver://{user}:{pass}@{host}:{port}?database={db}";
             
-            if (builder.Encrypt) uri += "&encrypt=true";
-            else uri += "&encrypt=false";
+            // Map SqlConnectionEncryptOption to go-mssqldb encrypt values: disable, false, true, strict
+            var encryptValue = builder.Encrypt.ToString() switch
+            {
+                "Strict" => "strict",
+                "Mandatory" or "True" => "true",
+                _ => "disable"  // Optional, False => no encryption
+            };
+            uri += $"&encrypt={encryptValue}";
 
-            // Ensure TrustServerCertificate is correctly propagated as CamelCase for go-mssqldb
+            // TrustServerCertificate for go-mssqldb
             if (builder.TrustServerCertificate) uri += "&TrustServerCertificate=true";
             else uri += "&TrustServerCertificate=false";
 

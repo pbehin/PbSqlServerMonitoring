@@ -178,6 +178,7 @@ public sealed class ConnectionsController : ControllerBase
             InitialCatalog = request.Database ?? "master",
             IntegratedSecurity = request.UseWindowsAuth,
             TrustServerCertificate = request.TrustCertificate,
+            Encrypt = ParseEncryptOption(request.Encrypt),
             ConnectTimeout = 10,  // Quick timeout for testing
             ApplicationName = "PbSqlServerMonitoring"
         };
@@ -190,6 +191,18 @@ public sealed class ConnectionsController : ControllerBase
 
         return builder.ConnectionString;
     }
+
+    /// <summary>
+    /// Parses the encrypt string value to SqlConnectionEncryptOption.
+    /// Valid values: disable, false, true, strict
+    /// </summary>
+    private static Microsoft.Data.SqlClient.SqlConnectionEncryptOption ParseEncryptOption(string? encrypt) =>
+        encrypt?.ToLowerInvariant() switch
+        {
+            "disable" or "false" => Microsoft.Data.SqlClient.SqlConnectionEncryptOption.Optional,
+            "strict" => Microsoft.Data.SqlClient.SqlConnectionEncryptOption.Strict,
+            _ => Microsoft.Data.SqlClient.SqlConnectionEncryptOption.Mandatory  // "true" or default
+        };
 
     /// <summary>
     /// Removes a connection.

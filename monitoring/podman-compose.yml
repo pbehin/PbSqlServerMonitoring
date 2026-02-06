@@ -6,6 +6,9 @@ services:
     container_name: sql_exporter
     ports:
       - "9399:9399"
+    environment:
+      # Allow certificates with negative serial numbers (RFC 5280 violation workaround)
+      - GODEBUG=x509negativeserial=1
     volumes:
       - ./sql_exporter/sql_exporter.yml:/etc/sql_exporter/sql_exporter.yml:ro
     command:

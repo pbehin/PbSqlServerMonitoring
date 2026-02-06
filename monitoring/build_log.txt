@@ -1,0 +1,69 @@
+[4m>>>> Executing external compose provider "C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker-compose.exe". Please see podman-compose(1) for how to disable this message. <<<<
+
+[0mtime="2026-02-06T16:21:08+01:00" level=warning msg="Docker Compose is configured to build using Bake, but buildkit isn't enabled"
+ Service sql_exporter  Building
+Sending build context to Docker daemon  4.171kB
+[1/2] STEP 1/11: FROM golang:1.23-alpine AS builder
+[1/2] STEP 2/11: RUN apk add --no-cache git build-base
+--> Using cache 7644567f72b18f4e69803891133f8800355173270a1a286d743045784df487d5
+--> 7644567f72b1
+[1/2] STEP 3/11: WORKDIR /build
+--> Using cache 44329a66dea4934cb4ae48b0e2641118fec6aa80996dde9d47db5707098cc861
+--> 44329a66dea4
+[1/2] STEP 4/11: RUN git clone https://github.com/burningalchemist/sql_exporter.git .
+--> Using cache 0a12ccdec50393595968c69ef088cde80bec182f92cf6ae3b475fef6297c212e
+--> 0a12ccdec503
+[1/2] STEP 5/11: ENV GOPROXY=direct
+--> 8bc6aa201817
+[1/2] STEP 6/11: RUN go env
+GO111MODULE=''
+GOARCH='amd64'
+GOBIN=''
+GOCACHE='/root/.cache/go-build'
+GOENV='/root/.config/go/env'
+GOEXE=''
+GOEXPERIMENT=''
+GOFLAGS=''
+GOHOSTARCH='amd64'
+GOHOSTOS='linux'
+GOINSECURE=''
+GOMODCACHE='/go/pkg/mod'
+GONOPROXY=''
+GONOSUMDB=''
+GOOS='linux'
+GOPATH='/go'
+GOPRIVATE=''
+GOPROXY='direct'
+GOROOT='/usr/local/go'
+GOSUMDB='sum.golang.org'
+GOTMPDIR=''
+GOTOOLCHAIN='local'
+GOTOOLDIR='/usr/local/go/pkg/tool/linux_amd64'
+GOVCS=''
+GOVERSION='go1.23.12'
+GODEBUG=''
+GOTELEMETRY='local'
+GOTELEMETRYDIR='/root/.config/go/telemetry'
+GCCGO='gccgo'
+GOAMD64='v1'
+AR='ar'
+CC='gcc'
+CXX='g++'
+CGO_ENABLED='1'
+GOMOD='/build/go.mod'
+GOWORK=''
+CGO_CFLAGS='-O2 -g'
+CGO_CPPFLAGS=''
+CGO_CXXFLAGS='-O2 -g'
+CGO_FFLAGS='-O2 -g'
+CGO_LDFLAGS='-O2 -g'
+PKG_CONFIG='pkg-config'
+GOGCCFLAGS='-fPIC -m64 -pthread -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=/tmp/go-build3700655524=/tmp/go-build -gno-record-gcc-switches'
+--> fd1a0522bcb6
+[1/2] STEP 7/11: RUN git config --global http.sslVerify false
+--> 495daafcd45a
+[1/2] STEP 8/11: RUN go mod download -x
+go: go.mod requires go >= 1.24.0 (running go 1.23.12; GOTOOLCHAIN=local)
+building at STEP "RUN go mod download -x": while running runtime: exit status 1
+
+Error: executing C:\Program Files\Docker\Docker\resources\bin\docker-compose.exe build sql_exporter: exit status 1

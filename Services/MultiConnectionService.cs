@@ -144,6 +144,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
                 Username = request.UseWindowsAuth ? null : request.Username,
                 EncryptedConnectionString = EncryptConnectionString(connectionString),
                 TrustCertificate = request.TrustCertificate,
+                Encrypt = request.Encrypt,
                 Timeout = request.Timeout > 0 ? request.Timeout : 30,
                 IsEnabled = true,
                 CreatedAt = DateTime.UtcNow,
@@ -589,7 +590,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
             TrustServerCertificate = request.TrustCertificate,
             ConnectTimeout = request.Timeout > 0 ? request.Timeout : 30,
             ApplicationName = "PbSqlServerMonitoring",
-            Encrypt = SqlConnectionEncryptOption.Optional,
+            Encrypt = ParseEncryptOption(request.Encrypt),
             MaxPoolSize = 2,
             MinPoolSize = 0
         };
@@ -601,6 +602,18 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         }
         return builder.ConnectionString;
     }
+
+    /// <summary>
+    /// Parses the encrypt string value to SqlConnectionEncryptOption.
+    /// Valid values: disable, false, true, strict
+    /// </summary>
+    private static SqlConnectionEncryptOption ParseEncryptOption(string? encrypt) =>
+        encrypt?.ToLowerInvariant() switch
+        {
+            "disable" or "false" => SqlConnectionEncryptOption.Optional,
+            "strict" => SqlConnectionEncryptOption.Strict,
+            _ => SqlConnectionEncryptOption.Mandatory  // "true" or default
+        };
 
     private string EncryptConnectionString(string connectionString) => _protector.Protect(connectionString);
     private string DecryptConnectionString(string encrypted) => _protector.Unprotect(encrypted);
@@ -614,6 +627,7 @@ public sealed class MultiConnectionService : IMultiConnectionService, IDisposabl
         UseWindowsAuth = connection.UseWindowsAuth,
         Username = connection.Username,
         TrustCertificate = connection.TrustCertificate,
+        Encrypt = connection.Encrypt,
         Timeout = connection.Timeout,
         IsEnabled = connection.IsEnabled,
         CreatedAt = connection.CreatedAt,

@@ -480,6 +480,7 @@ const MultiConnectionManager = {
             useWindowsAuth: document.getElementById('newWindowsAuthCheck').checked,
             username: document.getElementById('newUsernameInput').value.trim(),
             password: document.getElementById('newPasswordInput').value,
+            encrypt: document.getElementById('newEncryptSelect').value,
             trustCertificate: document.getElementById('newTrustCertCheck').checked,
             timeout: parseInt(document.getElementById('newTimeoutInput').value) || 30
         };

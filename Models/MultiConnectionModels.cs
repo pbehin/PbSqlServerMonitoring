@@ -78,6 +78,12 @@ public sealed class ServerConnection
     public bool TrustCertificate { get; set; } = true;
 
     /// <summary>
+    /// Connection encryption mode: disable, false, true, strict.
+    /// </summary>
+    [MaxLength(20)]
+    public string Encrypt { get; set; } = "true";
+
+    /// <summary>
     /// Connection timeout in seconds.
     /// </summary>
     public int Timeout { get; set; } = 30;
@@ -144,6 +150,10 @@ public sealed class AddConnectionRequest
     public string? Username { get; set; }
     public string? Password { get; set; }
     public bool TrustCertificate { get; set; } = true;
+    /// <summary>
+    /// Connection encryption mode: disable, false, true, strict.
+    /// </summary>
+    public string Encrypt { get; set; } = "true";
     public int Timeout { get; set; } = 30;
 }
 
@@ -159,6 +169,7 @@ public sealed class ConnectionInfoResponse
     public bool UseWindowsAuth { get; set; }
     public string? Username { get; set; }
     public bool TrustCertificate { get; set; }
+    public string Encrypt { get; set; } = "true";
     public int Timeout { get; set; }
     public bool IsEnabled { get; set; }
     public DateTime CreatedAt { get; set; }
