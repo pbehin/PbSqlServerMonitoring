@@ -639,6 +639,14 @@
                             {
                                 "color": "green",
                                 "value": null
+                            },
+                            {
+                                "color": "yellow",
+                                "value": 200
+                            },
+                            {
+                                "color": "red",
+                                "value": 500
                             }
                         ]
                     },
@@ -656,8 +664,10 @@
             "options": {
                 "legend": {
                     "calcs": [
+                        "min",
                         "mean",
-                        "max"
+                        "max",
+                        "last"
                     ],
                     "displayMode": "table",
                     "placement": "bottom",
@@ -680,8 +690,8 @@
                     "refId": "A"
                 }
             ],
-            "title": "Active Connections (count)",
-            "description": "Number of active user connections per database.",
+            "title": "User Connections (Current)",
+            "description": "Current number of user connections on SQL Server. This is a point-in-time value that should fluctuate with application load. If it only increases and never decreases, check for connection leaks in your application. Normal behavior: rises during activity, drops during idle periods.",
             "type": "timeseries"
         },
         {
@@ -830,7 +840,7 @@
                         "spanNulls": false,
                         "stacking": {
                             "group": "A",
-                            "mode": "none"
+                            "mode": "normal"
                         },
                         "thresholdsStyle": {
                             "mode": "off"
@@ -863,7 +873,9 @@
                     "calcs": ["mean"],
                     "displayMode": "table",
                     "placement": "right",
-                    "showLegend": true
+                    "showLegend": true,
+                    "sortBy": "Mean",
+                    "sortDesc": true
                 },
                 "tooltip": {
                     "mode": "multi",
@@ -877,7 +889,7 @@
                         "type": "prometheus",
                         "uid": "prometheus"
                     },
-                    "expr": "topk(10, rate(mssql_wait_stats{measure=\"wait_time_ms\"}[5m]) / 1000)",
+                    "expr": "topk(20, rate(mssql_wait_stats{measure=\"wait_time_ms\"}[5m]) / 1000) > 0",
                     "legendFormat": "{{ wait_type }}",
                     "refId": "A"
                 }
@@ -1013,7 +1025,7 @@
                 "orientation": "auto",
                 "reduceOptions": {
                     "calcs": [
-                        "lastNotNull"
+                        "max"
                     ],
                     "fields": "",
                     "values": false
@@ -1027,12 +1039,12 @@
                         "type": "prometheus",
                         "uid": "prometheus"
                     },
-                    "expr": "count(mssql_blocking_sessions)",
+                    "expr": "max_over_time(count(mssql_blocking_sessions)[5m:15s]) or vector(0)",
                     "legendFormat": "Blocked",
                     "refId": "A"
                 }
             ],
-            "title": "Blocking Sessions",
+            "title": "Blocking Sessions (peak)",
             "type": "stat"
         },
         {
@@ -1130,7 +1142,7 @@
                             }
                         ]
                     },
-                    "unit": "s"
+                    "unit": "none"
                 },
                 "overrides": [
                     {
@@ -1141,19 +1153,39 @@
                         "properties": [
                             {
                                 "id": "custom.width",
-                                "value": 250
+                                "value": 300
+                            },
+                            {
+                                "id": "custom.inspect",
+                                "value": true
                             }
                         ]
                     },
                     {
                         "matcher": {
                             "id": "byName",
-                            "options": "Blocking Query"
+                            "options": "Blocker Query"
                         },
                         "properties": [
                             {
                                 "id": "custom.width",
-                                "value": 250
+                                "value": 300
+                            },
+                            {
+                                "id": "custom.inspect",
+                                "value": true
+                            }
+                        ]
+                    },
+                    {
+                        "matcher": {
+                            "id": "byName",
+                            "options": "Max Wait Time (s)"
+                        },
+                        "properties": [
+                            {
+                                "id": "unit",
+                                "value": "s"
                             }
                         ]
                     }
@@ -1191,18 +1223,33 @@
                     },
                     "expr": "mssql_blocking_sessions",
                     "format": "table",
-                    "instant": true,
+                    "instant": false,
                     "refId": "A"
                 }
             ],
             "title": "Blocking Details",
-            "description": "Active blocking chains showing who is blocking whom, with query text and wait resource.\n\n[Microsoft Docs: dm_exec_requests](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-requests-transact-sql)",
+            "description": "Blocking events from the selected time range. Each row shows a blocker-blocked pair with their queries.\n\n[Microsoft Docs: dm_exec_requests](https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-views/sys-dm-exec-requests-transact-sql)",
             "transformations": [
+                {
+                    "id": "groupBy",
+                    "options": {
+                        "fields": {
+                            "blocking_session_id": { "aggregations": [], "operation": "groupby" },
+                            "blocked_session_id": { "aggregations": [], "operation": "groupby" },
+                            "db_name": { "aggregations": [], "operation": "groupby" },
+                            "wait_type": { "aggregations": [], "operation": "groupby" },
+                            "resource_type": { "aggregations": [], "operation": "groupby" },
+                            "blocking_query": { "aggregations": [], "operation": "groupby" },
+                            "blocked_query": { "aggregations": [], "operation": "groupby" },
+                            "Value": { "aggregations": ["max"], "operation": "aggregate" },
+                            "Time": { "aggregations": ["last"], "operation": "aggregate" }
+                        }
+                    }
+                },
                 {
                     "id": "organize",
                     "options": {
                         "excludeByName": {
-                            "Time": true,
                             "__name__": true,
                             "connection_id": true,
                             "connection_name": true,
@@ -1215,15 +1262,27 @@
                             "target": true,
                             "user_id": true
                         },
+                        "indexByName": {
+                            "Time (last)": 0,
+                            "blocking_session_id": 1,
+                            "blocking_query": 2,
+                            "blocked_session_id": 3,
+                            "blocked_query": 4,
+                            "db_name": 5,
+                            "wait_type": 6,
+                            "resource_type": 7,
+                            "Value (max)": 8
+                        },
                         "renameByName": {
+                            "Time (last)": "Last Seen",
+                            "blocking_session_id": "Blocker SPID",
+                            "blocking_query": "Blocker Query",
                             "blocked_session_id": "Blocked SPID",
-                            "blocking_session_id": "Blocking SPID",
-                            "wait_type": "Wait Type",
-                            "db_name": "Database",
                             "blocked_query": "Blocked Query",
-                            "blocking_query": "Blocking Query",
+                            "db_name": "Database",
+                            "wait_type": "Wait Type",
                             "resource_type": "Resource",
-                            "Value": "Wait Time"
+                            "Value (max)": "Max Wait Time (s)"
                         }
                     }
                 }

@@ -165,8 +165,8 @@ metrics:
         CAST(blocked.blocking_session_id AS VARCHAR(10)) as blocking_session_id,
         ISNULL(blocked.wait_type, 'N/A') as wait_type,
         ISNULL(DB_NAME(blocked.database_id), 'N/A') as db_name,
-        ISNULL(LEFT(blocked_text.text, 100), 'N/A') as blocked_query,
-        ISNULL(LEFT(blocking_text.text, 100), 'N/A') as blocking_query,
+        ISNULL(LEFT(blocked_text.text, 500), 'N/A') as blocked_query,
+        ISNULL(LEFT(blocking_text.text, 500), 'N/A') as blocking_query,
         ISNULL(blocked.wait_resource, 'N/A') as resource_type,
         blocked.wait_time / 1000.0 as wait_time_seconds
       FROM sys.dm_exec_requests blocked WITH (NOLOCK)
